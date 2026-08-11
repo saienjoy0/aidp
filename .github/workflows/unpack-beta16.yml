@@ -55,6 +55,13 @@ jobs:
           if [[ -f extension/tests/structural_patch_engine.test.js ]]; then node extension/tests/structural_patch_engine.test.js; fi
           if [[ -f extension/tests/beta16_static.test.js ]]; then node extension/tests/beta16_static.test.js; fi
 
+      - name: Upload complete Beta16 source
+        uses: actions/upload-artifact@v4
+        with:
+          name: aidp-beta16-complete-source
+          path: extension
+          if-no-files-found: error
+
       - name: Commit recovered source to branch
         shell: bash
         run: |
