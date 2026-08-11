@@ -1,3 +1,13 @@
+v0.7.9-beta.17
+- Beta13/16で発生した部分構造失敗を、完全checkpoint一致なしでもjournal由来状態として安全分類できるrecovery engineを追加
+- split途中で作成された空字幕孤立regionを、ID・時刻・ラベル・対象外region不変を確認した場合だけ補償削除可能にした
+- operation例外時のadapter_result / errorをjournalへ即時保存し、再試行時に部分反映を再分類可能にした
+- recovery中のadd/removeは自動再補償せず、保存Payload証拠を残して次回rollbackでlive stateを再判定する
+- intermediate recoveryはround_id差だけを許容するが、完了判定は適用前backup fingerprint完全一致を必須化
+- AIDP自身の新規region ID生成経路が未確認のため、通常split/add/deleteをfeature flag OFFへ戻した（journal recoveryは利用可能）
+- content / service worker / offscreen / side panelを0.7.9-beta.17へ統一
+- recovery_engine unit testとBeta17 static testを追加
+
 v0.7.9-beta.16
 - split/add/deleteの専用チェックボックスと再検査ボタンを廃止。
 - dry-run時に構造operationを自動的に検証対象へ含め、差分確認後は適用ボタン1回で実行。

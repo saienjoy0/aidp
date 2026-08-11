@@ -5,7 +5,7 @@
   if (window.__AIDP_BRIDGE_V070_CONTENT__) return;
   window.__AIDP_BRIDGE_V070_CONTENT__ = true;
 
-  const VERSION = '0.7.9-beta.16';
+  const VERSION = '0.7.9-beta.17';
   const PAGE_INSTANCE_ID = globalThis.crypto?.randomUUID?.() || `page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const DOCUMENT_TIME_ORIGIN_MS = Number(globalThis.performance?.timeOrigin || Date.now());
   const BADGE_ID = 'aidp-chatgpt-bridge-v070-badge';

@@ -1,8 +1,8 @@
 'use strict';
 
-importScripts('patch_engine.js');
+importScripts('patch_engine.js', 'recovery_engine.js');
 
-const VERSION = '0.7.9-beta.16';
+const VERSION = '0.7.9-beta.17';
 const OFFSCREEN_URL = 'offscreen.html';
 const RULESET_URL = 'ruleset.json';
 const EXPORT_PORT_NAME = 'AIDP_EXPORT_JOB_V1';
@@ -1062,9 +1062,13 @@ const MUTATION_PORT_NAME = 'AIDP_MUTATION_JOB_V1';
 const FEATURE_FLAGS = Object.freeze({
   update_region: true,
   set_labels: false,
-  split_region: true,
-  add_region: true,
-  delete_region: true
+  // Beta 17 safety gate: the currently discovered Neeko handleAddRegion API
+  // accepts a fully formed ID and does not prove AIDP's own ID-generation path.
+  // Structural code remains available only to transaction recovery of already
+  // journaled operations until that native ID generator is verified on-device.
+  split_region: false,
+  add_region: false,
+  delete_region: false
 });
 let activeMutationJob = null;
 
@@ -1591,9 +1595,14 @@ function readTempSaveTraceMainWorld(traceId, expected) {
     let targetDataMap = null;
     let targetOk = false;
     let fullStateOk = false;
+    const absentRegionId = String(expected?.absent_region_id || '');
     if (expectedList) {
       fullStateOk = JSON.stringify(dataCanonical) === JSON.stringify(expectedList) &&
         JSON.stringify(dataMapCanonical) === JSON.stringify(expectedList);
+    } else if (absentRegionId) {
+      targetData = Array.isArray(data) ? data.find(region => idOf(region) === absentRegionId) : null;
+      targetDataMap = Array.isArray(dataMap) ? dataMap.find(region => idOf(region) === absentRegionId) : null;
+      targetOk = !targetData && !targetDataMap;
     } else {
       targetData = Array.isArray(data) ? data.find(region => idOf(region) === String(expected?.region_id || '')) : null;
       targetDataMap = Array.isArray(dataMap) ? dataMap.find(region => idOf(region) === String(expected?.region_id || '')) : null;
@@ -1622,6 +1631,7 @@ function readTempSaveTraceMainWorld(traceId, expected) {
       ids_match: idsOk,
       full_state_match: expectedList ? fullStateOk : null,
       target: expectedList ? null : {
+        absent_region_id: absentRegionId || null,
         data: targetData ? { text: textOf(targetData), start: targetData.start, end: targetData.end } : null,
         dataMap: targetDataMap ? { text: textOf(targetDataMap), start: targetDataMap.start, end: targetDataMap.end } : null
       },
@@ -2060,6 +2070,76 @@ async function waitForExpectedRegionState(expectedRegions, progressBase = 35, ti
   return { ok: false, snapshot: lastSnapshot, attempts, elapsed_ms: Date.now() - startedAt };
 }
 
+async function waitForRecoveryCoreState(expectedRegions, progressBase = 55, timeoutMs = ROLLBACK_SETTLEMENT.timeoutMs) {
+  const expected = normalizedCanonicalRegions(expectedRegions);
+  const startedAt = Date.now();
+  const attempts = [];
+  let stableMatches = 0;
+  let lastSnapshot = null;
+  while (Date.now() - startedAt <= timeoutMs) {
+    try {
+      const snapshot = await collectSnapshot(progressBase);
+      lastSnapshot = snapshot;
+      const coreMatch = globalThis.AIDPRecoveryEngine.regionListsCoreEqual(snapshot.canonicalRegions, expected);
+      const tripleMatch = Boolean(snapshot.summary.validation?.triple_match);
+      const ok = coreMatch && tripleMatch;
+      stableMatches = ok ? stableMatches + 1 : 0;
+      attempts.push({
+        attempt: attempts.length + 1,
+        elapsed_ms: Date.now() - startedAt,
+        ok,
+        core_state_match_ignoring_round_id: coreMatch,
+        triple_match: tripleMatch,
+        actual_count: snapshot.canonicalRegions.length,
+        expected_count: expected.length,
+        fingerprint: snapshot.caseData.source_fingerprint
+      });
+      if (stableMatches >= ROLLBACK_SETTLEMENT.stableMatchesRequired) {
+        return { ok: true, snapshot, attempts, elapsed_ms: Date.now() - startedAt };
+      }
+    } catch (error) {
+      stableMatches = 0;
+      attempts.push({ attempt: attempts.length + 1, elapsed_ms: Date.now() - startedAt, ok: false, error: error?.message || String(error) });
+    }
+    await sleep(ROLLBACK_SETTLEMENT.pollIntervalMs);
+  }
+  return { ok: false, snapshot: lastSnapshot, attempts, elapsed_ms: Date.now() - startedAt };
+}
+
+async function performRecoveryStructuralMutation(tabId, action, region, expectedCount) {
+  const regionId = String(region?.region_id || '');
+  if (!regionId) throw new Error(`recovery ${action}: region IDがありません`);
+  const traceId = `save-recovery-${action}-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+  const result = {
+    ok: true,
+    adapter: 'aidp-structural-recovery-v1',
+    action,
+    region_id: regionId,
+    neeko: null,
+    save: null,
+    compensated: false
+  };
+  await installTempSaveTrace(tabId, traceId);
+  try {
+    result.neeko = await performNeekoStructure(tabId, action, region);
+    const expected = action === 'remove'
+      ? { absent_region_id: regionId, expected_count: expectedCount }
+      : { region_id: regionId, text: region.text, start: region.start, end: region.end, expected_count: expectedCount };
+    result.save = await waitForTempSavePayload(tabId, traceId, expected);
+    return result;
+  } catch (error) {
+    // Recovery mutations are intentionally not auto-compensated here. If a
+    // mutation partially lands but verification fails, the journal keeps the
+    // adapter evidence and the next rollback attempt re-classifies live state.
+    const wrapped = new Error(error?.message || String(error));
+    wrapped.code = error?.code;
+    wrapped.adapter_result = result;
+    throw wrapped;
+  } finally {
+    await removeTempSaveTrace(tabId, traceId);
+  }
+}
+
 function verifyOnlyTargetChanged(before, after, targetId, expectedTarget) {
   const beforeMap = new Map(before.canonicalRegions.map(region => [region.region_id, region]));
   const afterMap = new Map(after.canonicalRegions.map(region => [region.region_id, region]));
@@ -2186,7 +2266,7 @@ async function runPatchDryRun(patchInput, approvedStructuralOpIds = null) {
   if (activeExportJob || activeMutationJob) throw new Error('別の書き出し・変更処理が進行中です');
   const snapshot = await collectSnapshot();
   const approvals = approvedStructuralOpIds == null
-    ? structuralOperationIdsFromPatch(patchInput)
+    ? []
     : [...new Set((approvedStructuralOpIds || []).map(String))].sort();
   const report = globalThis.AIDPPatchEngine.dryRun(patchInput, snapshot, {
     featureFlags: FEATURE_FLAGS,
@@ -2258,157 +2338,171 @@ async function rollbackStructuralJournalInternal(journal, preSnapshot, reason = 
   const rollbackErrors = [...initialErrors];
   const operations = Array.isArray(journal.operations) ? journal.operations : [];
   const backupRegions = normalizedCanonicalRegions(journal.backup_regions || []);
-  let stateIndex = -2;
-  if (canonicalRegionListsEqual(preSnapshot?.canonicalRegions, backupRegions)) {
-    stateIndex = -1;
-  } else {
-    for (let index = 0; index < operations.length; index += 1) {
-      if (Array.isArray(operations[index]?.expected_regions_after) &&
-          canonicalRegionListsEqual(preSnapshot?.canonicalRegions, operations[index].expected_regions_after)) {
-        stateIndex = index;
-      }
-    }
-  }
+  let currentSnapshot = preSnapshot;
 
-  if (stateIndex === -1) {
-    journal.status = reason === 'apply_failure' ? 'rolled_back_after_failure' : 'rolled_back';
+  const finish = async (restored, extra = {}) => {
+    journal.status = restored
+      ? (reason === 'apply_failure' ? 'rolled_back_after_failure' : 'rolled_back')
+      : 'recovery_required';
     journal.rollback_completed_at = new Date().toISOString();
+    if (restored) journal.finalized_at = journal.rollback_completed_at;
     journal.rollback_errors = rollbackErrors;
-    journal.rollback_fingerprint = journal.backup_source_fingerprint;
+    journal.rollback_fingerprint = currentSnapshot?.caseData?.source_fingerprint || (restored ? journal.backup_source_fingerprint : null);
     await writeJournal(journal);
     const report = {
-      schema: 'aidp-recovery-report/v2',
+      schema: 'aidp-recovery-report/v3',
       generated_at: new Date().toISOString(),
       journal_id: journal.journal_id,
       case_key: journal.case_key,
       reason,
-      restored: true,
-      already_at_backup: true,
+      restored,
       structural: true,
       status: journal.status,
       errors: rollbackErrors,
       backup_fingerprint: journal.backup_source_fingerprint,
-      current_fingerprint: journal.backup_source_fingerprint,
-      operations
+      current_fingerprint: journal.rollback_fingerprint,
+      operations,
+      ...extra
     };
     await saveLastReport('recovery', report);
     return report;
+  };
+
+  if (!currentSnapshot) {
+    rollbackErrors.push('現在snapshotを取得できないため構造復元を実行できません');
+    return finish(false);
+  }
+  if (initialErrors.length) {
+    // Case mismatch / snapshot acquisition errors from the outer guard are not
+    // recoverable by guessing. Keep the journal blocked and perform no writes.
+    return finish(false, { precheck_failed: true });
   }
 
-  if (stateIndex < 0) {
-    rollbackErrors.push('現在の全件状態が適用前backupまたは各operation完了状態のいずれとも一致しません。ユーザー編集を上書きしないため自動復元を停止しました');
-    journal.status = 'recovery_required';
-    journal.rollback_completed_at = new Date().toISOString();
-    journal.rollback_errors = rollbackErrors;
-    journal.rollback_fingerprint = preSnapshot?.caseData?.source_fingerprint || null;
-    await writeJournal(journal);
-    const report = {
-      schema: 'aidp-recovery-report/v2',
-      generated_at: new Date().toISOString(),
-      journal_id: journal.journal_id,
-      case_key: journal.case_key,
-      reason,
-      restored: false,
-      structural: true,
-      status: journal.status,
-      errors: rollbackErrors,
-      backup_fingerprint: journal.backup_source_fingerprint,
-      current_fingerprint: preSnapshot?.caseData?.source_fingerprint || null,
-      operations
-    };
-    await saveLastReport('recovery', report);
-    return report;
+  if (canonicalRegionListsEqual(currentSnapshot.canonicalRegions, backupRegions)) {
+    currentSnapshot = currentSnapshot || preSnapshot;
+    return finish(true, { already_at_backup: true });
+  }
+
+  // A structural operation may throw after only part of its side effects have
+  // landed. Do not require the live state to equal a completed checkpoint.
+  // Re-classify every operation that reached executing/applied/failed, newest
+  // first, against the known state immediately before that operation.
+  const candidateIndexes = operations
+    .map((item, index) => ({ item, index }))
+    .filter(({ item }) => ['applied', 'executing', 'failed'].includes(String(item?.status || '')))
+    .map(({ index }) => index)
+    .reverse();
+
+  if (!candidateIndexes.length) {
+    rollbackErrors.push('backupと一致せず、かつ復元対象となるexecuting/applied/failed operationがありません');
+    return finish(false);
   }
 
   const { tab } = await getActiveAidpTab();
-  let currentSnapshot = preSnapshot;
-  for (let index = stateIndex; index >= 0; index -= 1) {
-    const item = operations[index];
-    const expectedPrevious = index === 0 ? backupRegions : operations[index - 1].expected_regions_after;
-    await mutationProgress(`構造復元中 ${stateIndex - index + 1}/${stateIndex + 1}: ${item.op_id}`, 20 + Math.round(((stateIndex - index) / Math.max(1, stateIndex + 1)) * 55));
-    try {
-      if (item.type === 'update_region' || item.type === 'set_labels') {
-        await performRegionUpdate(tab.id, {
-          region_id: item.region_id,
-          set: operationSetFromCanonical(item.before, Object.keys(item.set || {})),
-          before: item.after,
-          after: item.before,
-          expected_region_count: expectedPrevious?.length
-        });
-      } else if (item.type === 'add_region') {
-        await performStructuralDelete(tab.id, {
-          before: item.after,
-          expected_regions_after: expectedPrevious
-        });
-      } else if (item.type === 'delete_region') {
-        await performStructuralAdd(tab.id, {
-          after: item.before,
-          expected_regions_after: expectedPrevious
-        });
-      } else if (item.type === 'split_region') {
-        const parts = Array.isArray(item.after) ? item.after : [];
-        if (parts.length !== 2) throw new Error('split rollback用partが2件ではありません');
-        const [first, second] = parts;
-        await performNeekoStructure(tab.id, 'remove', second);
-        const restoreSet = {};
-        for (const field of ['start', 'end', 'text']) {
-          if (JSON.stringify(first[field]) !== JSON.stringify(item.before?.[field])) restoreSet[field] = item.before[field];
-        }
-        if (Object.keys(restoreSet).length) {
-          await performRegionUpdate(tab.id, {
-            region_id: item.before.region_id,
-            set: restoreSet,
-            before: first,
-            after: item.before,
-            expected_region_count: expectedPrevious?.length
-          });
-        }
-      } else {
-        throw new Error(`復元未対応operation: ${item.type}`);
-      }
+  let handled = 0;
 
-      const settlement = await waitForExpectedRegionState(expectedPrevious, 30, ROLLBACK_SETTLEMENT.timeoutMs);
+  for (const index of candidateIndexes) {
+    const item = operations[index];
+    const expectedPrevious = normalizedCanonicalRegions(index === 0 ? backupRegions : (operations[index - 1]?.expected_regions_after || backupRegions));
+    await mutationProgress(`構造復元を判定中 ${handled + 1}/${candidateIndexes.length}: ${item.op_id}`, 18 + Math.round((handled / Math.max(1, candidateIndexes.length)) * 55));
+
+    const classification = globalThis.AIDPRecoveryEngine.classifyStep({
+      currentRegions: currentSnapshot.canonicalRegions,
+      previousRegions: expectedPrevious,
+      operation: item
+    });
+    item.recovery_classification = cloneJson(classification);
+    item.rollback_started_at = item.rollback_started_at || new Date().toISOString();
+    await writeJournal(journal);
+
+    if (!classification.safe) {
+      item.rollback_status = 'conflict';
+      item.rollback_error = classification.reason || '現在状態をjournal由来の部分状態として安全に分類できません';
+      rollbackErrors.push(`${item.op_id}: ${item.rollback_error}`);
+      await writeJournal(journal);
+      return finish(false, { stopped_at_op_id: item.op_id, recovery_classification: classification });
+    }
+
+    if (classification.already_restored) {
+      item.rollback_status = 'already_restored';
+      item.rolled_back_at = new Date().toISOString();
+      handled += 1;
+      await writeJournal(journal);
+      // The current state can legitimately already be the previous operation's
+      // checkpoint; continue to the next older operation without writing.
+      continue;
+    }
+
+    try {
+      const actionResults = [];
+      for (const action of classification.actions || []) {
+        if (action.type === 'remove_region') {
+          actionResults.push(await performRecoveryStructuralMutation(tab.id, 'remove', action.region, expectedPrevious.length));
+        } else if (action.type === 'add_region') {
+          actionResults.push(await performRecoveryStructuralMutation(tab.id, 'add', action.region, expectedPrevious.length));
+        } else if (action.type === 'restore_region') {
+          const live = currentSnapshot.canonicalRegions.find(region => region.region_id === action.region_id);
+          if (!live) throw new Error(`復元対象regionが見つかりません: ${action.region_id}`);
+          const restoreSet = {};
+          for (const field of ['start', 'end', 'text']) {
+            if (field === 'text') {
+              if (normalizeText(live[field]) !== normalizeText(action.region[field])) restoreSet[field] = action.region[field];
+            } else if (!numericClose(live[field], action.region[field], TIME_TOLERANCE.tableVsModel)) {
+              restoreSet[field] = action.region[field];
+            }
+          }
+          if (Object.keys(restoreSet).length) {
+            actionResults.push(await performRegionUpdate(tab.id, {
+              region_id: action.region_id,
+              set: restoreSet,
+              before: live,
+              after: action.region,
+              expected_region_count: expectedPrevious.length
+            }));
+          }
+        } else {
+          throw new Error(`未知のrecovery action: ${action.type}`);
+        }
+      }
+      item.rollback_adapter_results = actionResults;
+
+      const settlement = await waitForRecoveryCoreState(expectedPrevious, 62, ROLLBACK_SETTLEMENT.timeoutMs);
       currentSnapshot = settlement.snapshot || currentSnapshot;
-      if (!settlement.ok) throw new Error('operation逆適用後の全件状態が直前状態へ安定して戻りません');
+      item.rollback_verify = {
+        ok: settlement.ok,
+        core_state_match_ignoring_round_id: settlement.ok,
+        attempts: settlement.attempts,
+        elapsed_ms: settlement.elapsed_ms
+      };
+      if (!settlement.ok) {
+        throw new Error('operation逆適用後、対象外fieldを含むcore全件状態が直前状態へ安定して戻りません');
+      }
       item.rollback_status = 'applied';
       item.rolled_back_at = new Date().toISOString();
-      item.rollback_verify = { attempts: settlement.attempts, elapsed_ms: settlement.elapsed_ms };
+      handled += 1;
     } catch (error) {
       item.rollback_status = 'failed';
       item.rollback_error = error?.message || String(error);
+      if (error?.adapter_result) item.rollback_adapter_result = cloneJson(error.adapter_result);
       rollbackErrors.push(`${item.op_id}: ${item.rollback_error}`);
       await writeJournal(journal);
-      break;
+      return finish(false, { stopped_at_op_id: item.op_id });
     }
     await writeJournal(journal);
   }
 
+  // Intermediate matching deliberately ignores round_id because AIDP may
+  // renumber while regions are added/removed. Completion is stricter: the exact
+  // backup fingerprint must return and remain stable, otherwise recovery stays
+  // blocked rather than silently rewriting ordering metadata.
   const rollbackSettlement = await waitForFingerprint(journal.backup_source_fingerprint);
   currentSnapshot = rollbackSettlement.snapshot || currentSnapshot;
-  const restored = rollbackErrors.length === 0 && rollbackSettlement.ok;
-  if (!rollbackSettlement.ok) rollbackErrors.push('復元後fingerprintが適用前backupへ安定して戻ったことを確認できません');
   journal.rollback_settlement = { elapsed_ms: rollbackSettlement.elapsed_ms, attempts: rollbackSettlement.attempts };
-  journal.status = restored ? (reason === 'apply_failure' ? 'rolled_back_after_failure' : 'rolled_back') : 'recovery_required';
-  journal.rollback_completed_at = new Date().toISOString();
-  journal.rollback_errors = rollbackErrors;
-  journal.rollback_fingerprint = currentSnapshot?.caseData?.source_fingerprint || null;
-  await writeJournal(journal);
-  const report = {
-    schema: 'aidp-recovery-report/v2',
-    generated_at: new Date().toISOString(),
-    journal_id: journal.journal_id,
-    case_key: journal.case_key,
-    reason,
-    restored,
-    structural: true,
-    status: journal.status,
-    errors: rollbackErrors,
-    backup_fingerprint: journal.backup_source_fingerprint,
-    current_fingerprint: currentSnapshot?.caseData?.source_fingerprint || null,
-    operations
-  };
-  await saveLastReport('recovery', report);
-  return report;
+  if (!rollbackSettlement.ok) {
+    rollbackErrors.push('core状態は復元できましたが、最終fingerprintが適用前backupへ安定して戻りません。round_id等を自動補正せず停止しました');
+    return finish(false, { core_recovery_completed: true });
+  }
+  return finish(true, { core_recovery_completed: true, exact_backup_verified: true });
 }
 
 async function rollbackJournalInternal(journal, reason = 'manual') {
@@ -2543,6 +2637,7 @@ async function rollbackJournalInternal(journal, reason = 'manual') {
   if (!restored) rollbackErrors.push('復元後fingerprintが適用前backupへ安定して戻ったことを確認できません');
   journal.status = rollbackErrors.length ? 'recovery_required' : (reason === 'apply_failure' ? 'rolled_back_after_failure' : 'rolled_back');
   journal.rollback_completed_at = new Date().toISOString();
+  if (!rollbackErrors.length) journal.finalized_at = journal.rollback_completed_at;
   journal.rollback_errors = rollbackErrors;
   journal.rollback_fingerprint = current?.caseData?.source_fingerprint || null;
   await writeJournal(journal);
@@ -2625,8 +2720,19 @@ async function applyPatchFromDryRun(token) {
       item.status = 'executing';
       item.started_at = new Date().toISOString();
       await writeJournal(journal);
-      const operationResult = await performPatchOperation(tab.id, item);
-      item.adapter_result = operationResult;
+      let operationResult = null;
+      try {
+        operationResult = await performPatchOperation(tab.id, item);
+        item.adapter_result = operationResult;
+      } catch (operationError) {
+        item.status = 'failed';
+        item.failed_at = new Date().toISOString();
+        item.operation_error = operationError?.message || String(operationError);
+        item.operation_error_code = operationError?.code || null;
+        if (operationError?.adapter_result) item.adapter_result = cloneJson(operationError.adapter_result);
+        await writeJournal(journal);
+        throw operationError;
+      }
       const settlement = await waitForExpectedRegionState(item.expected_regions_after, 25 + index * 2);
       current = settlement.snapshot || current;
       item.verify = {

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 16",
+  "name": "AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 17",
   "version": "0.7.9",
-  "description": "AIDP案件ZIP書き出し、ChatGPT修正JSONのdry-run、字幕・時刻・分割・追加・削除の差分確認後1クリック適用、保存Payload照合、stale journal安全解除、rollback、手動再読み込み後の永続化確認を行う統合ベータ版。暫存・提出は行いません。",
+  "description": "AIDP案件ZIP書き出し、ChatGPT修正JSONのdry-run、start/end/textの安全適用、部分構造失敗を含むjournal復元、保存Payload照合、手動再読み込み後の永続化確認を行う統合ベータ版。split/add/deleteの通常適用はAIDP固有ID生成経路の実機確認まで停止し、暫存・提出は行いません。",
   "permissions": [
     "sidePanel",
     "scripting",

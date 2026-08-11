@@ -1,8 +1,8 @@
-# AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 16
+# AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 17
 
-Beta 16は、Beta 13の初回構造テストで判明した「追加直後のModel反映遅延」を修正し、Beta 12で実機確認済みの字幕・時刻・一時保存経路を維持し、字幕の分割・小条追加・小条削除をdry-run差分確認後の1クリック適用へ簡略化した構造操作ベータです。構造操作はNeeko `handleAddRegion` / `handleRemoveRegion` と既存のReact字幕・Neeko時刻経路を組み合わせ、各operation後に `/api/dispatch/SubmitTempItemAnswer` の `data.regions` / `dataMap.regions` 全件、HTTP 200、Model / Wave / Table、件数、ID、`round_id`を確認します。
+Beta 17は、Beta 13〜16の構造テストで残った `recovery_required` / 孤立region問題を修復する安全復元版です。`start / end / text` の通常適用は維持し、構造operationが途中失敗した場合は「完全成功checkpoint」だけでなくjournal由来の部分状態を分類して逆適用します。一方、現在確認済みのNeeko `handleAddRegion` は完成済みregion IDを受け取るAPIであり、AIDP自身の新規ID生成経路はまだ実機確定していないため、通常の `split_region / add_region / delete_region` はfeature flagで停止しています。既存journalの補償復元は引き続き利用できます。
 
-AIDPの現在案件をChatGPT用ZIPへ書き出し、ChatGPTが返した修正JSONをdry-runで検査し、dry-run差分確認後に `start / end / text` と分割・追加・削除を適用ボタン1回でAIDPへ反映するChrome / Edge Manifest V3拡張です。
+AIDPの現在案件をChatGPT用ZIPへ書き出し、ChatGPTが返した修正JSONをdry-runで検査し、dry-run差分確認後に `start / end / text` をAIDPへ反映するChrome / Edge Manifest V3拡張です。構造操作は既存journalの復元に限って使用し、通常patchからのsplit/add/deleteは現在停止しています。
 
 ## Beta 12で確定した実機経路とBeta 13の構造経路
 
@@ -21,12 +21,12 @@ AIDPの現在案件をChatGPT用ZIPへ書き出し、ChatGPTが返した修正JS
 - `split_region`: 元regionのIDを先頭partに残し、2つ目のpartにはdry-run時に衝突しないIDを予約
 - `add_region`: `start / end / text / speaker / keep / voice_type`を必須とし、初期安全版では`keep=保留`のみ
 - `delete_region`: 現在値の`expected`完全一致を必須化し、適用ボタンを最終確認とする
-- 分割・追加・削除を含むpatchは、対象operationをすべてチェックして再dry-runしない限り適用不可
+- 分割・追加・削除を含む通常patchはfeature flagで拒否（AIDP固有ID生成の実機確認後に再有効化）
 - 構造変更後は全regionを時刻順に照合し、件数、ID、連続`round_id`、字幕、時刻、ラベル、三重照合を確認
 - rollbackは逆操作で実施し、追加は削除、削除は同一IDで再追加、分割は追加part削除＋元region復元
 - 現在状態がbackupまたは既知のoperation完了状態と一致しない場合は、ユーザー編集を保護するため自動復元を停止
 
-Beta 16では、handleAddRegion / handleRemoveRegion直後のModel確認が未確定でも即失敗にせず、一時保存Payloadのdata/dataMap全件一致と30秒のModel/Wave/Table settlementで最終判定します。未提出の検証案件で保持確認が通るまでAIDPの提出を押しません。
+Beta 17では、既存journalの構造復元時にhandleAddRegion / handleRemoveRegionを補償操作として利用し、一時保存PayloadとModel/Wave/Tableの安定状態を確認します。部分状態を安全に分類できない場合や最終backup fingerprintへ戻らない場合は成功扱いせず `recovery_required` のまま停止します。
 
 ## Beta 10の保持確認
 
@@ -187,7 +187,7 @@ Beta 16では、handleAddRegion / handleRemoveRegion直後のModel確認が未�
 2. dry-runする
 3. 「N件をAIDPへ適用」を1回押す
 
-分割・追加・削除の専用チェックボックスは廃止し、dry-run差分表示と適用ボタンを確認契約にします。話者、保留／丢弃、人声类型の既存region単独変更は引き続き無効です。提出は自動化しません。
+Beta 17では通常split/add/deleteをfeature flagで停止しています。話者、保留／丢弃、人声类型の既存region単独変更も引き続き無効です。構造操作はjournal recovery内の補償だけに限定し、提出は自動化しません。
 
 
 ## v0.7.4 Beta 5：書き込み経路の分離
