@@ -1,19 +1,16 @@
-name: Recover Beta16 source
+name: Apply and test Beta17 recovery
 
 on:
   workflow_dispatch:
   pull_request:
     branches:
       - main
-    paths:
-      - .github/workflows/unpack-beta16.yml
-      - archive/AIDP_ChatGPT_Bridge_v0.7.9_beta16_one_click.zip.b64.part*
 
 permissions:
   contents: write
 
 jobs:
-  recover:
+  beta17:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -21,25 +18,16 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
 
-      - name: Restore complete Beta16 source from Git history
+      - name: Reconstruct Beta17 patch
         shell: bash
         run: |
           set -euo pipefail
-          rm -rf extension /tmp/aidp_beta16_history
-          mkdir -p extension /tmp/aidp_beta16_history
-          git archive 896353e84474dba4e892e19885c34cd2f8115ae5 -- 'AIDP_ChatGPT_Bridge_v0.7.9_beta16_one_click (1)' \
-            | tar -x -C /tmp/aidp_beta16_history
-          cp -a '/tmp/aidp_beta16_history/AIDP_ChatGPT_Bridge_v0.7.9_beta16_one_click (1)/.' extension/
+          cat .github/beta17.patch.part* > /tmp/beta17.patch
+          echo "patch bytes: $(wc -c < /tmp/beta17.patch)"
+          git apply --check /tmp/beta17.patch
+          git apply /tmp/beta17.patch
 
-          required=(manifest.json service_worker.js content.js sidepanel.html sidepanel.js patch_engine.js offscreen.html offscreen.js ruleset.json)
-          for f in "${required[@]}"; do
-            test -f "extension/$f" || { echo "Missing required file: $f"; exit 1; }
-          done
-
-          echo 'Recovered files:'
-          find extension -maxdepth 2 -type f -printf '%P\n' | sort
-
-      - name: Static checks
+      - name: Static and unit tests
         shell: bash
         run: |
           set -euo pipefail
@@ -51,18 +39,13 @@ jobs:
               json.loads(p.read_text(encoding='utf-8'))
               print('JSON OK:', p)
           PY
-          if [[ -f extension/tests/patch_engine.test.js ]]; then node extension/tests/patch_engine.test.js; fi
-          if [[ -f extension/tests/structural_patch_engine.test.js ]]; then node extension/tests/structural_patch_engine.test.js; fi
-          if [[ -f extension/tests/beta16_static.test.js ]]; then node extension/tests/beta16_static.test.js; fi
+          node extension/tests/patch_engine.test.js
+          node extension/tests/structural_patch_engine.test.js
+          node extension/tests/recovery_engine.test.js
+          node extension/tests/beta17_static.test.js
 
-      - name: Upload complete Beta16 source
-        uses: actions/upload-artifact@v4
-        with:
-          name: aidp-beta16-complete-source
-          path: extension
-          if-no-files-found: error
-
-      - name: Commit recovered source to branch
+      - name: Commit verified Beta17 source
+        if: github.event_name == 'pull_request'
         shell: bash
         run: |
           set -euo pipefail
@@ -70,9 +53,8 @@ jobs:
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- extension
           if git diff --cached --quiet; then
-            echo 'No source changes to commit.'
+            echo 'No Beta17 source changes to commit.'
             exit 0
           fi
-          git commit -m 'Recover complete Beta16 extension source'
-          target_branch="${GITHUB_HEAD_REF:-$GITHUB_REF_NAME}"
-          git push origin HEAD:"$target_branch"
+          git commit -m 'Implement Beta17 structural recovery safeguards'
+          git push origin HEAD:"${GITHUB_HEAD_REF}"
