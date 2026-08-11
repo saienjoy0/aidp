@@ -18,12 +18,16 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
 
-      - name: Reconstruct Beta17 patch
+      - name: Reconstruct and verify Beta17 patch
         shell: bash
         run: |
           set -euo pipefail
-          cat .github/beta17.patch.part* > /tmp/beta17.patch
+          cat .github/beta17v2.patch.part* > /tmp/beta17.patch
+          actual_sha="$(sha256sum /tmp/beta17.patch | awk '{print $1}')"
+          expected_sha="269cb10d52aa5e26010b62c5171c921042ba525988de5206a9d0900f7a20372e"
           echo "patch bytes: $(wc -c < /tmp/beta17.patch)"
+          echo "patch sha256: $actual_sha"
+          test "$actual_sha" = "$expected_sha"
           git apply --check /tmp/beta17.patch
           git apply /tmp/beta17.patch
 
