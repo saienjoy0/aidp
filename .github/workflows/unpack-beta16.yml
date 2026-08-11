@@ -1,4 +1,4 @@
-name: Apply and test Beta17 recovery
+name: Beta17 CI
 
 on:
   workflow_dispatch:
@@ -7,29 +7,13 @@ on:
       - main
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   beta17:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-          ref: ${{ github.head_ref || github.ref_name }}
-
-      - name: Reconstruct and verify Beta17 patch
-        shell: bash
-        run: |
-          set -euo pipefail
-          cat .github/beta17v2.patch.part* > /tmp/beta17.patch
-          actual_sha="$(sha256sum /tmp/beta17.patch | awk '{print $1}')"
-          expected_sha="269cb10d52aa5e26010b62c5171c921042ba525988de5206a9d0900f7a20372e"
-          echo "patch bytes: $(wc -c < /tmp/beta17.patch)"
-          echo "patch sha256: $actual_sha"
-          test "$actual_sha" = "$expected_sha"
-          git apply --check /tmp/beta17.patch
-          git apply /tmp/beta17.patch
 
       - name: Static and unit tests
         shell: bash
@@ -47,18 +31,3 @@ jobs:
           node extension/tests/structural_patch_engine.test.js
           node extension/tests/recovery_engine.test.js
           node extension/tests/beta17_static.test.js
-
-      - name: Commit verified Beta17 source
-        if: github.event_name == 'pull_request'
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -- extension
-          if git diff --cached --quiet; then
-            echo 'No Beta17 source changes to commit.'
-            exit 0
-          fi
-          git commit -m 'Implement Beta17 structural recovery safeguards'
-          git push origin HEAD:"${GITHUB_HEAD_REF}"
