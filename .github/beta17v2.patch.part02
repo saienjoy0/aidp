@@ -1,0 +1,100 @@
++    adapter: 'aidp-structural-recovery-v1',
++    action,
++    region_id: regionId,
++    neeko: null,
++    save: null,
++    compensated: false
++  };
++  await installTempSaveTrace(tabId, traceId);
++  try {
++    result.neeko = await performNeekoStructure(tabId, action, region);
++    const expected = action === 'remove'
++      ? { absent_region_id: regionId, expected_count: expectedCount }
++      : { region_id: regionId, text: region.text, start: region.start, end: region.end, expected_count: expectedCount };
++    result.save = await waitForTempSavePayload(tabId, traceId, expected);
++    return result;
++  } catch (error) {
++    // Recovery mutations are intentionally not auto-compensated here. If a
++    // mutation partially lands but verification fails, the journal keeps the
++    // adapter evidence and the next rollback attempt re-classifies live state.
++    const wrapped = new Error(error?.message || String(error));
++    wrapped.code = error?.code;
++    wrapped.adapter_result = result;
++    throw wrapped;
++  } finally {
++    await removeTempSaveTrace(tabId, traceId);
++  }
++}
++
+ function verifyOnlyTargetChanged(before, after, targetId, expectedTarget) {
+   const beforeMap = new Map(before.canonicalRegions.map(region => [region.region_id, region]));
+   const afterMap = new Map(after.canonicalRegions.map(region => [region.region_id, region]));
+@@ -2186,7 +2266,7 @@ async function runPatchDryRun(patchInput, approvedStructuralOpIds = null) {
+   if (activeExportJob || activeMutationJob) throw new Error('別の書き出し・変更処理が進行中です');
+   const snapshot = await collectSnapshot();
+   const approvals = approvedStructuralOpIds == null
+-    ? structuralOperationIdsFromPatch(patchInput)
++    ? []
+     : [...new Set((approvedStructuralOpIds || []).map(String))].sort();
+   const report = globalThis.AIDPPatchEngine.dryRun(patchInput, snapshot, {
+     featureFlags: FEATURE_FLAGS,
+@@ -2258,157 +2338,171 @@ async function rollbackStructuralJournalInternal(journal, preSnapshot, reason =
+   const rollbackErrors = [...initialErrors];
+   const operations = Array.isArray(journal.operations) ? journal.operations : [];
+   const backupRegions = normalizedCanonicalRegions(journal.backup_regions || []);
+-  let stateIndex = -2;
+-  if (canonicalRegionListsEqual(preSnapshot?.canonicalRegions, backupRegions)) {
+-    stateIndex = -1;
+-  } else {
+-    for (let index = 0; index < operations.length; index += 1) {
+-      if (Array.isArray(operations[index]?.expected_regions_after) &&
+-          canonicalRegionListsEqual(preSnapshot?.canonicalRegions, operations[index].expected_regions_after)) {
+-        stateIndex = index;
+-      }
+-    }
+-  }
++  let currentSnapshot = preSnapshot;
+ 
+-  if (stateIndex === -1) {
+-    journal.status = reason === 'apply_failure' ? 'rolled_back_after_failure' : 'rolled_back';
++  const finish = async (restored, extra = {}) => {
++    journal.status = restored
++      ? (reason === 'apply_failure' ? 'rolled_back_after_failure' : 'rolled_back')
++      : 'recovery_required';
+     journal.rollback_completed_at = new Date().toISOString();
++    if (restored) journal.finalized_at = journal.rollback_completed_at;
+     journal.rollback_errors = rollbackErrors;
+-    journal.rollback_fingerprint = journal.backup_source_fingerprint;
++    journal.rollback_fingerprint = currentSnapshot?.caseData?.source_fingerprint || (restored ? journal.backup_source_fingerprint : null);
+     await writeJournal(journal);
+     const report = {
+-      schema: 'aidp-recovery-report/v2',
++      schema: 'aidp-recovery-report/v3',
+       generated_at: new Date().toISOString(),
+       journal_id: journal.journal_id,
+       case_key: journal.case_key,
+       reason,
+-      restored: true,
+-      already_at_backup: true,
++      restored,
+       structural: true,
+       status: journal.status,
+       errors: rollbackErrors,
+       backup_fingerprint: journal.backup_source_fingerprint,
+-      current_fingerprint: journal.backup_source_fingerprint,
+-      operations
++      current_fingerprint: journal.rollback_fingerprint,
++      operations,
++      ...extra
+     };
+     await saveLastReport('recovery', report);
+     return report;
++  };
++
++  if (!currentSnapshot) {
++    rollbackErrors.push('現在snapshotを取得できないため構造復元を実行できません');
++    return finish(false);
++  }
++  if (initialErrors.length) {
++    // Case mismatch / snapshot acquisition errors from the outer guard are not
++    // recoverable by guessing. Keep the journal blocked and perform no writes.
