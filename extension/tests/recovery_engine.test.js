@@ -67,7 +67,6 @@ const updateOp = { type: 'update_region', region_id: 'region_1', before: backup[
 assert.strictEqual(engine.classifyStep({ currentRegions: [updated, backup[1]], previousRegions: backup, operation: updateOp }).mode, 'rollback_update');
 assert.strictEqual(engine.classifyStep({ currentRegions: backup, previousRegions: backup, operation: updateOp }).mode, 'already_restored');
 
-console.log('recovery_engine.test.js: PASS');
 
 // Exact regression shape from the Beta13/Beta16 orphan incident: a generated
 // second split region survived with empty text while the original first region
@@ -92,3 +91,41 @@ const incident = engine.classifyStep({
 assert.strictEqual(incident.safe, true, JSON.stringify(incident, null, 2));
 assert.strictEqual(incident.mode, 'rollback_split_second_only');
 assert.strictEqual(incident.actions[0].region_id, 'region_1785680637086_x3duart');
+
+// Beta18: if AIDP generated the formal ID but the service worker stopped before
+// persisting the placeholder -> formal-ID mapping, recovery may remove exactly
+// one region that matches the placeholder's geometry/default metadata.
+const nativePlaceholder = r('__aidp_bridge_native__add-1__0', 20, 21, 'NATIVE', 3);
+const nativeActual = r('region_1786431517361_gs1yqnr', 20, 21, '', 3);
+const nativeAddClass = engine.classifyStep({
+  currentRegions: [...backup, nativeActual],
+  previousRegions: backup,
+  operation: { type: 'add_region', after: nativePlaceholder }
+});
+assert.strictEqual(nativeAddClass.safe, true, JSON.stringify(nativeAddClass, null, 2));
+assert.strictEqual(nativeAddClass.mode, 'rollback_add_native_unresolved_id');
+assert.strictEqual(nativeAddClass.actions[0].region_id, nativeActual.region_id);
+
+const nativeSplitSecond = r('__aidp_bridge_native__split-1__1', 174.31, 179.776, 'SECOND', 3);
+const nativeSplitActual = r('region_1786431519182_j1idsot', 174.31, 179.776, '', 3);
+const nativeSplitClass = engine.classifyStep({
+  currentRegions: [backup[0], splitFirst, nativeSplitActual],
+  previousRegions: backup,
+  operation: {
+    type: 'split_region', region_id: 'region_47', before: backup[1],
+    after: [splitFirst, nativeSplitSecond]
+  }
+});
+assert.strictEqual(nativeSplitClass.safe, true, JSON.stringify(nativeSplitClass, null, 2));
+assert.strictEqual(nativeSplitClass.mode, 'rollback_split_native_unresolved_id');
+assert.strictEqual(nativeSplitClass.actions[0].region_id, nativeSplitActual.region_id);
+assert.deepStrictEqual(nativeSplitClass.actions.map(x => x.type), ['remove_region', 'restore_region']);
+
+const ambiguousNative = engine.classifyStep({
+  currentRegions: [...backup, nativeActual, r('region_1786431519999_other', 20, 21, '', 4)],
+  previousRegions: backup,
+  operation: { type: 'add_region', after: nativePlaceholder }
+});
+assert.strictEqual(ambiguousNative.safe, false);
+
+console.log('recovery_engine.test.js: PASS');

@@ -1,7 +1,7 @@
 (() => {
   'use strict';
 
-  const VERSION = '0.7.9-beta.17';
+  const VERSION = '0.7.9-beta.18';
   const encoder = new TextEncoder();
   const objectUrls = new Set();
   const preparedMedia = new Map();

@@ -1,3 +1,15 @@
+v0.7.9-beta.18
+- 実AIDP `单语新字幕对齐` raw UIDLからcontrolled `form.regions` / native ID生成 / round_id再採番 / filter lock / delete契約を確定
+- dry-runの構造新規IDを本番風IDから `__aidp_bridge_native__...` placeholderへ変更し、Bridgeによるproduction region ID生成を廃止
+- ADD/SPLITはlive template onChangeに未知の一時IDを渡し、AIDP自身が生成した正式IDを差分で一意解決してjournalへ即時保存
+- placeholder解決後に最終expected fingerprintを再計算し、placeholder入りfingerprintを永続化判定に使用しない
+- DELETEはcontrolled `form.regions`を正本として削除・start順sort・round_id再採番後にnative onChangeへ反映
+- recovery exact-addは既知backup IDだけを復元し、AIDP正式IDは生成しない
+- AIDP正式ID生成後journal保存前に停止する狭いクラッシュ窓をrecovery engineで安全分類
+- 話者フィルター中は構造操作とstart/end変更を拒否
+- split/add/deleteを個別承認付きで再有効化、set_labels/提出/暫存ボタン自動化は引き続き無効
+- Beta18 CI / static testへ更新。実機E2E完了まではLevel B未達扱い
+
 v0.7.9-beta.17
 - Beta13/16で発生した部分構造失敗を、完全checkpoint一致なしでもjournal由来状態として安全分類できるrecovery engineを追加
 - split途中で作成された空字幕孤立regionを、ID・時刻・ラベル・対象外region不変を確認した場合だけ補償削除可能にした

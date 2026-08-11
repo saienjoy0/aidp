@@ -1,8 +1,21 @@
-# AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 17
+# AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 18
 
-Beta 17は、Beta 13〜16の構造テストで残った `recovery_required` / 孤立region問題を修復する安全復元版です。`start / end / text` の通常適用は維持し、構造operationが途中失敗した場合は「完全成功checkpoint」だけでなくjournal由来の部分状態を分類して逆適用します。一方、現在確認済みのNeeko `handleAddRegion` は完成済みregion IDを受け取るAPIであり、AIDP自身の新規ID生成経路はまだ実機確定していないため、通常の `split_region / add_region / delete_region` はfeature flagで停止しています。既存journalの補償復元は引き続き利用できます。
+Beta 18は、実AIDPテンプレート `单语新字幕对齐` の `raw_uidl` から確認したcontrolled `neeko-wavesurfer` 契約に合わせて、通常の `split_region / add_region / delete_region` を再実装する候補版です。
 
-AIDPの現在案件をChatGPT用ZIPへ書き出し、ChatGPTが返した修正JSONをdry-runで検査し、dry-run差分確認後に `start / end / text` をAIDPへ反映するChrome / Edge Manifest V3拡張です。構造操作は既存journalの復元に限って使用し、通常patchからのsplit/add/deleteは現在停止しています。
+今回確認できたAIDP本来の構造仕様：
+
+- 正本は `form.regions`、`regionsControlled=true`
+- Wave側の未知regionを受けたtemplate `onChange`が正式ID `region_${Date.now()}_${Math.random().toString(36).substring(2, 9)}` をAIDP側で生成
+- 新規regionの初期値は `speaker_desc="1" / if_save="保留" / is_qualified="无问题" / music="说话"`
+- 全regionを `start` 昇順に並べ、`round_id=index+1` で再採番
+- 話者フィルター中は切分・増删・時刻調整をAIDP自身がロック
+- deleteは `form.regions` から削除して再ソート・再採番するのが本体で、Wave removeは補助
+
+Bridgeはdry-run中には `__aidp_bridge_native__...` という**非本番placeholder**だけを使い、本番 `region_...` IDを生成しません。適用時にAIDP template `onChange`へ未知の一時IDを渡し、AIDPが生成した正式IDをbefore/after差分で解決してjournalへ即時保存します。
+
+`start / end / text` の既存安全経路、保存Payload照合、Model/Wave/Table三重照合、journal、手動再読み込み後の永続化確認は維持します。split/add/deleteはdry-run後に**各operationの個別承認**が必要です。話者・人声类型・保留／丢弃の自動変更、暫存ボタン、提出ボタンの自動操作は行いません。
+
+**重要:** Beta18の構造経路はコード・静的/単体テスト段階です。実AIDPでADD → SPLIT → DELETE → rollback → 手動再読み込み保持のE2Eが通るまではLevel B完了とは扱いません。
 
 ## Beta 12で確定した実機経路とBeta 13の構造経路
 
@@ -187,7 +200,7 @@ Beta 17では、既存journalの構造復元時にhandleAddRegion / handleRemove
 2. dry-runする
 3. 「N件をAIDPへ適用」を1回押す
 
-Beta 17では通常split/add/deleteをfeature flagで停止しています。話者、保留／丢弃、人声类型の既存region単独変更も引き続き無効です。構造操作はjournal recovery内の補償だけに限定し、提出は自動化しません。
+Beta 18ではsplit/add/deleteを個別承認付きで有効化しています。正式region IDはAIDP自身に生成させます。話者、保留／丢弃、人声类型の既存region単独変更は引き続き無効で、提出は自動化しません。
 
 
 ## v0.7.4 Beta 5：書き込み経路の分離
