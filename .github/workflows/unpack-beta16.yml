@@ -1,60 +1,34 @@
-name: Beta18 Bootstrap
+name: Beta18 CI
 
 on:
+  workflow_dispatch:
   pull_request:
     branches:
+      - main
       - aidp-beta17-recovery
-  workflow_dispatch:
 
 permissions:
-  contents: write
-
-concurrency:
-  group: beta18-bootstrap
-  cancel-in-progress: true
+  contents: read
 
 jobs:
-  bootstrap-beta18:
-    if: github.event_name == 'workflow_dispatch' || (github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'aidp-beta18-structural')
+  beta18:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: aidp-beta18-structural
-          fetch-depth: 0
 
-      - name: Apply staged Beta18 patch
+      - name: Static and unit tests
         shell: bash
         run: |
           set -euo pipefail
-
-          if [[ ! -f .github/beta18.patch.ready ]]; then
-            echo 'Beta18 patch staging is not complete yet; waiting for ready sentinel.'
-            exit 0
-          fi
-
-          for n in 00 01 02 03 04 05 06; do
-            f=".github/beta18.patch.part${n}"
-            if [[ ! -f "$f" ]]; then
-              echo "Missing staged patch part: $f"
-              exit 1
-            fi
-          done
-
-          cat .github/beta18.patch.part00 \
-              .github/beta18.patch.part01 \
-              .github/beta18.patch.part02 \
-              .github/beta18.patch.part03 \
-              .github/beta18.patch.part04 \
-              .github/beta18.patch.part05 \
-              .github/beta18.patch.part06 > /tmp/beta18.patch.gz.b64
-          base64 -d /tmp/beta18.patch.gz.b64 | gzip -dc > /tmp/beta18.patch
-          git apply --check /tmp/beta18.patch
-          git apply /tmp/beta18.patch
-          rm -f .github/beta18_extension.patch.gz.b64 .github/beta18.patch.part* .github/beta18.patch.ready
-
-          git config user.name 'github-actions[bot]'
-          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          git add -A
-          git commit -m 'Implement Beta18 native structural adapter'
-          git push origin HEAD:aidp-beta18-structural
+          while IFS= read -r -d '' f; do node --check "$f"; done < <(find extension -type f -name '*.js' -print0)
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          for p in Path('extension').rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8'))
+              print('JSON OK:', p)
+          PY
+          node extension/tests/patch_engine.test.js
+          node extension/tests/structural_patch_engine.test.js
+          node extension/tests/recovery_engine.test.js
+          node extension/tests/beta18_static.test.js
