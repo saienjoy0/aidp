@@ -10,13 +10,13 @@
   <header class="app-header">
     <div>
       <h1>AIDP ↔ ChatGPT Bridge</h1>
-      <div class="version">v0.7.9 Integrated Beta 17</div>
+      <div class="version">v0.7.9 Integrated Beta 18</div>
     </div>
     <span id="connection-badge" class="badge neutral">確認中</span>
   </header>
 
   <div class="safety-banner">
-    書き出し・検査・修正JSONの差分確認後、確認済みのstart／end／textを適用します。split／add／deleteはAIDP固有ID生成の実機確認まで通常適用を停止し、既存journalの安全復元にだけ使用します。暫存・提出は自動操作しません。
+    書き出し・検査・修正JSONの差分確認後、確認済みのstart／end／textを適用します。split／add／deleteは1件ずつ明示承認された場合だけ、AIDP自身のcontrolled構造処理と正式region ID生成を使って適用します。暫存・提出は自動操作しません。
   </div>
 
   <nav class="tabs" aria-label="Bridge機能">
@@ -60,6 +60,12 @@
         <h3>dry-run結果</h3>
         <div id="patch-summary"></div>
         <div id="operation-list"></div>
+        <div id="structural-approval" class="subcard hidden">
+          <h3>構造変更の個別承認</h3>
+          <p class="muted">split／add／deleteは、下の全operationを1件ずつ確認してチェックした後だけ適用可能になります。</p>
+          <div id="structural-approval-list"></div>
+          <button id="structural-approve-button" class="secondary" disabled>チェックした構造変更を承認</button>
+        </div>
         <button id="download-dryrun-button" class="ghost">dry-runレポートJSONを保存</button>
       </div>
     </section>
@@ -83,7 +89,7 @@
         <button class="ghost report-download" data-kind="persistence">永続化レポート</button>
         <button class="ghost report-download" data-kind="recovery">復元レポート</button>
       </div>
-      <div class="note">通常のsplit／add／deleteはAIDP固有ID生成経路の実機確認まで停止中です。既存journalの復元だけが構造操作を使用します。話者、人声类型、保留／丢弃の自動変更は引き続き無効です。</div>
+      <div class="note">split／add／deleteはdry-run後の個別承認が必須です。AIDPの話者フィルター中は構造変更・時刻変更を停止します。話者、人声类型、保留／丢弃の自動変更は引き続き無効です。</div>
     </section>
 
     <section class="status-card" aria-live="polite">

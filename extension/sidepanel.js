@@ -15,6 +15,9 @@
   const patchPreview = $('patch-preview');
   const patchSummary = $('patch-summary');
   const operationList = $('operation-list');
+  const structuralApproval = $('structural-approval');
+  const structuralApprovalList = $('structural-approval-list');
+  const structuralApproveButton = $('structural-approve-button');
   const applyButton = $('apply-button');
   const applyReadySummary = $('apply-ready-summary');
   const confirmPersistenceButton = $('confirm-persistence-button');
@@ -89,6 +92,7 @@
       button.disabled = value;
     }
     spinner.classList.toggle('hidden', !value);
+    updateStructuralApprovalEnabled();
     updateApplyEnabled();
   }
 
@@ -168,6 +172,9 @@
     patchPreview.classList.remove('hidden');
     patchSummary.textContent = '';
     operationList.textContent = '';
+    structuralApproval.classList.add('hidden');
+    structuralApprovalList.textContent = '';
+    structuralApproveButton.disabled = true;
     const p = document.createElement('p');
     p.className = report.applicable ? 'op-status applicable' : 'op-status rejected';
     p.textContent = report.applicable
@@ -209,7 +216,7 @@
         checkbox.type = 'checkbox';
         checkbox.dataset.structuralOpId = op.op_id;
         const text = document.createElement('span');
-        text.textContent = `${op.op_id} / ${op.type} / ${op.region_id || op.after?.region_id || '新規IDはdry-runで予約'}`;
+        text.textContent = `${op.op_id} / ${op.type} / ${op.region_id || (op.after?.region_id?.startsWith?.('__aidp_bridge_native__') ? '正式IDはAIDPが適用時生成' : op.after?.region_id) || '新規'}`;
         label.append(checkbox, text);
         structuralApprovalList.appendChild(label);
       }
@@ -226,6 +233,38 @@
       applyButton.textContent = '検査済み修正をAIDPへ適用';
     }
     updateApplyEnabled();
+  }
+
+  function updateStructuralApprovalEnabled() {
+    const boxes = [...structuralApprovalList.querySelectorAll('input[type="checkbox"]')];
+    structuralApproveButton.disabled = busy || !boxes.length || boxes.some(box => !box.checked);
+  }
+
+  async function approveStructuralChanges() {
+    if (busy || structuralApproveButton.disabled || !currentDryRun?.dry_run_token) return;
+    const opIds = [...structuralApprovalList.querySelectorAll('input[type="checkbox"]:checked')]
+      .map(box => box.dataset.structuralOpId)
+      .filter(Boolean);
+    setBusy(true);
+    setStatus('構造変更の個別承認を反映して再dry-runしています…', 20);
+    try {
+      const result = await chrome.runtime.sendMessage({
+        type: 'AIDP_APPROVE_STRUCTURAL_DRY_RUN',
+        token: currentDryRun.dry_run_token,
+        op_ids: opIds
+      });
+      if (!result?.ok) throw new Error(result?.error || '構造変更の承認に失敗しました');
+      renderDryRun(result.report);
+      switchTab(result.report.applicable ? 'apply' : 'import');
+      setStatus(result.report.applicable
+        ? '構造変更を個別承認しました。最終差分を確認してから適用してください。'
+        : '承認後dry-runに適用不可項目があります。', 100);
+    } catch (error) {
+      setStatus(`構造変更の承認失敗: ${error?.message || String(error)}`);
+    } finally {
+      setBusy(false);
+      await refreshJournal();
+    }
   }
 
   function updateApplyEnabled() {
@@ -401,6 +440,7 @@ AIDPを手動で再読み込みした後、「手動再読み込み後：45秒�
   exportButton.addEventListener('click', runExport);
   inspectButton.addEventListener('click', runInspection);
   dryRunButton.addEventListener('click', runDryRun);
+  structuralApproveButton.addEventListener('click', approveStructuralChanges);
   applyButton.addEventListener('click', runApply);
   confirmPersistenceButton.addEventListener('click', runConfirmPersistence);
   rollbackButton.addEventListener('click', runRollback);

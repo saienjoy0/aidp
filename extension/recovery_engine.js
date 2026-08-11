@@ -2,6 +2,8 @@
   'use strict';
 
   const TIME_TOLERANCE = 0.0025;
+  const STRUCTURAL_PLACEHOLDER_PREFIX = '__aidp_bridge_native__';
+  const isStructuralPlaceholderId = value => String(value || '').startsWith(STRUCTURAL_PLACEHOLDER_PREFIX);
 
   const normalizeText = value => String(value ?? '').replace(/\r\n/g, '\n');
   const close = (a, b) => Number.isFinite(Number(a)) && Number.isFinite(Number(b)) && Math.abs(Number(a) - Number(b)) <= TIME_TOLERANCE;
@@ -42,6 +44,17 @@
     // transcription when a later step fails. Only exact intended text or empty
     // text is considered attributable to this journal. Any other text is treated
     // as a user edit/conflict and must not be deleted automatically.
+    return a.text === b.text || a.text === '';
+  }
+
+  function createdRegionSignatureMatches(aInput, bInput) {
+    const a = canonical(aInput);
+    const b = canonical(bInput);
+    if (!a || !b || !a.region_id) return false;
+    if (!close(a.start, b.start) || !close(a.end, b.end)) return false;
+    for (const key of ['speaker', 'keep', 'voice_type', 'quality']) {
+      if (a[key] !== b[key]) return false;
+    }
     return a.text === b.text || a.text === '';
   }
 
@@ -124,6 +137,35 @@
     if (type === 'add_region') {
       const created = canonical(operation?.after);
       if (!created?.region_id) return conflict('add_regionの作成regionをjournalから特定できません');
+
+      if (isStructuralPlaceholderId(created.region_id)) {
+        // AIDP generates the formal production ID inside the template onChange.
+        // If the service worker died in the tiny window before the journal could
+        // persist that resolved ID, identify the one attributable extra region by
+        // exact geometry/default metadata and intended-or-empty text.
+        for (const [id, expected] of previousMap) {
+          const actual = currentMap.get(id);
+          if (!actual || !coreEquals(actual, expected)) return conflict(`add_region以外の状態が変化しています: ${id}`);
+        }
+        const extras = [...currentMap.entries()].filter(([id]) => !previousMap.has(id));
+        if (!extras.length) {
+          return { safe: true, already_restored: true, mode: 'already_restored', actions: [], reason: 'native追加regionは現在存在しません', details: { placeholder_region_id: created.region_id } };
+        }
+        if (extras.length !== 1) return conflict('native add後に複数の未知regionがあり、journal由来を一意に特定できません', { extra_ids: extras.map(([id]) => id) });
+        const [actualId, liveCreated] = extras[0];
+        if (!createdRegionSignatureMatches(liveCreated, created)) {
+          return conflict(`native追加regionがjournal由来と安全に断定できません: ${actualId}`, { actual: liveCreated, expected: created });
+        }
+        return {
+          safe: true,
+          already_restored: false,
+          mode: 'rollback_add_native_unresolved_id',
+          actions: [{ type: 'remove_region', region_id: actualId, region: liveCreated }],
+          reason: 'AIDP生成IDのjournal記録前に停止した可能性があるため、一意に一致する追加regionだけを除去できます',
+          details: { placeholder_region_id: created.region_id, resolved_live_region_id: actualId }
+        };
+      }
+
       const unrelated = unrelatedStateMatches(currentMap, previousMap, [created.region_id], [created.region_id]);
       if (!unrelated.ok) return conflict(unrelated.reason);
       for (const [id, expected] of previousMap) {
@@ -179,8 +221,35 @@
       const first = parts[0];
       const second = parts[1];
       if (first.region_id !== before.region_id || !second?.region_id) return conflict('split_regionのregion ID関係が不正です');
-      const unrelated = unrelatedStateMatches(currentMap, previousMap, [before.region_id, second.region_id], [second.region_id]);
-      if (!unrelated.ok) return conflict(unrelated.reason);
+
+      const secondPlaceholder = isStructuralPlaceholderId(second.region_id);
+      let liveSecond = null;
+      let liveSecondId = second.region_id;
+      if (secondPlaceholder) {
+        // Only the original split target is allowed to differ among prior IDs.
+        for (const [id, expected] of previousMap) {
+          if (id === before.region_id) continue;
+          const actual = currentMap.get(id);
+          if (!actual || !coreEquals(actual, expected)) return conflict(`対象外regionが変更または欠落しています: ${id}`);
+        }
+        const extras = [...currentMap.entries()].filter(([id]) => !previousMap.has(id));
+        if (extras.length > 1) return conflict('native split後に複数の未知regionがあり、追加partを一意に特定できません', { extra_ids: extras.map(([id]) => id) });
+        if (extras.length === 1) {
+          const [actualId, actual] = extras[0];
+          if (!createdRegionSignatureMatches(actual, second)) {
+            return conflict(`native split追加regionがjournal由来と安全に断定できません: ${actualId}`, { actual, expected: second });
+          }
+          liveSecondId = actualId;
+          liveSecond = actual;
+        }
+      } else {
+        const unrelated = unrelatedStateMatches(currentMap, previousMap, [before.region_id, second.region_id], [second.region_id]);
+        if (!unrelated.ok) return conflict(unrelated.reason);
+        liveSecond = currentMap.get(second.region_id);
+        if (liveSecond && !createdRegionMatches(liveSecond, second)) {
+          return conflict(`分割で作成されたregionがjournal由来と安全に断定できません: ${second.region_id}`, { actual: liveSecond, expected: second });
+        }
+      }
 
       const liveFirst = currentMap.get(before.region_id);
       if (!liveFirst) return conflict(`分割元regionが現在状態にありません: ${before.region_id}`);
@@ -190,19 +259,14 @@
         return conflict(`分割元regionがjournalの分割前/分割後のどちらにも一致しません: ${before.region_id}`);
       }
 
-      const liveSecond = currentMap.get(second.region_id);
-      if (liveSecond && !createdRegionMatches(liveSecond, second)) {
-        return conflict(`分割で作成されたregionがjournal由来と安全に断定できません: ${second.region_id}`, { actual: liveSecond, expected: second });
-      }
-
       if (!liveSecond && firstIsBefore) {
         return { safe: true, already_restored: true, mode: 'already_restored', actions: [], reason: '分割の追加regionはなく、元regionも変更前状態です', details: {} };
       }
       const actions = [];
-      if (liveSecond) actions.push({ type: 'remove_region', region_id: second.region_id, region: liveSecond });
+      if (liveSecond) actions.push({ type: 'remove_region', region_id: liveSecondId, region: liveSecond });
       if (firstIsAfter) actions.push({ type: 'restore_region', region_id: before.region_id, region: before });
-      let mode = 'rollback_split_full';
-      if (liveSecond && firstIsBefore) mode = 'rollback_split_second_only';
+      let mode = secondPlaceholder ? 'rollback_split_native_unresolved_id' : 'rollback_split_full';
+      if (!secondPlaceholder && liveSecond && firstIsBefore) mode = 'rollback_split_second_only';
       if (!liveSecond && firstIsAfter) mode = 'rollback_split_first_only';
       return {
         safe: true,
@@ -212,7 +276,14 @@
         reason: liveSecond && liveSecond.text === ''
           ? 'split途中で作成された空字幕regionをjournal由来と確認できたため安全に除去できます'
           : 'splitの部分/完全反映状態をjournalの既知値だけで逆適用できます',
-        details: { first_is_before: firstIsBefore, first_is_after: firstIsAfter, second_present: Boolean(liveSecond), second_text_empty: Boolean(liveSecond && liveSecond.text === '') }
+        details: {
+          first_is_before: firstIsBefore,
+          first_is_after: firstIsAfter,
+          second_present: Boolean(liveSecond),
+          second_text_empty: Boolean(liveSecond && liveSecond.text === ''),
+          placeholder_region_id: secondPlaceholder ? second.region_id : null,
+          resolved_live_region_id: secondPlaceholder && liveSecond ? liveSecondId : null
+        }
       };
     }
 
@@ -223,6 +294,8 @@
     canonical,
     coreEquals,
     createdRegionMatches,
+    createdRegionSignatureMatches,
+    isStructuralPlaceholderId,
     regionListsCoreEqual,
     classifyStep
   });

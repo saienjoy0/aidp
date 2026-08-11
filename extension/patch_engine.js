@@ -13,38 +13,29 @@
   const numberOrNull = value => Number.isFinite(Number(value)) ? Number(value) : null;
   const round6 = value => Number.isFinite(Number(value)) ? Number(Number(value).toFixed(6)) : null;
 
-  function fnv1a(text) {
-    let hash = 2166136261;
-    for (let index = 0; index < String(text).length; index += 1) {
-      hash ^= String(text).charCodeAt(index);
-      hash = Math.imul(hash, 16777619);
-    }
-    return hash >>> 0;
-  }
+  const STRUCTURAL_PLACEHOLDER_PREFIX = '__aidp_bridge_native__';
 
-  function makeStructuralRegionId(snapshot, operation, partIndex, usedIds) {
-    const baseTime = Number.isFinite(Date.parse(snapshot?.caseData?.generated_at || ''))
-      ? Date.parse(snapshot.caseData.generated_at)
-      : Date.now();
-    const seed = [
-      snapshot?.caseData?.source_fingerprint || '',
-      operation?.op_id || '',
-      partIndex,
-      baseTime
-    ].join('|');
-    const suffix = fnv1a(seed).toString(36).padStart(7, '0').slice(-7);
-    let candidate = `region_${baseTime}_${suffix}`;
+  function makeStructuralPlaceholderId(operation, partIndex, usedIds) {
+    const base = String(operation?.op_id || 'op')
+      .replace(/[^A-Za-z0-9_-]+/g, '_')
+      .slice(0, 80) || 'op';
+    let candidate = `${STRUCTURAL_PLACEHOLDER_PREFIX}${base}__${partIndex}`;
     let serial = 1;
     while (usedIds.has(candidate)) {
-      candidate = `region_${baseTime}_${suffix}${serial.toString(36)}`;
+      candidate = `${STRUCTURAL_PLACEHOLDER_PREFIX}${base}__${partIndex}_${serial}`;
       serial += 1;
     }
     usedIds.add(candidate);
     return candidate;
   }
 
+  function isStructuralPlaceholderId(value) {
+    return String(value || '').startsWith(STRUCTURAL_PLACEHOLDER_PREFIX);
+  }
+
   function sortAndRenumber(regions) {
-    regions.sort((a, b) => Number(a.start) - Number(b.start) || Number(a.end) - Number(b.end) || String(a.region_id).localeCompare(String(b.region_id)));
+    // Mirror the live AIDP template exactly: stable sort by start only.
+    regions.sort((a, b) => Number(a.start) - Number(b.start));
     regions.forEach((region, index) => {
       region.round_id = index + 1;
       region.duration = round6(Number(region.end) - Number(region.start));
@@ -328,6 +319,9 @@
           result.expected_mismatches = expectedMatches(current, operation.expected);
           if (result.expected_mismatches.length) result.errors.push('expectedが現在値と一致しません');
           if (current.keep !== '保留') result.errors.push('初期安全版のsplit_regionは保留regionだけを対象にできます');
+          if (String(current.speaker ?? '') !== '1' || String(current.voice_type ?? '') !== '说话') {
+            result.errors.push('native splitの新規partはspeaker=1 / keep=保留 / voice_type=说话で生成されます。元小条の話者または人声类型が異なる場合は自動分割しません');
+          }
           if (!Array.isArray(operation.parts) || operation.parts.length !== 2) {
             result.errors.push('split_regionのpartsは初期安全版では2件ちょうど必要です');
           } else {
@@ -346,13 +340,17 @@
               else if (!normalizeText(part.text).trim()) result.errors.push(`parts[${index}]のtextを空にできません`);
               return {
                 ...clone(current),
-                region_id: index === 0 ? current.region_id : makeStructuralRegionId(snapshot, operation, index, usedRegionIds),
+                region_id: index === 0 ? current.region_id : makeStructuralPlaceholderId(operation, index, usedRegionIds),
                 start: round6(start),
                 end: round6(end),
                 duration: start != null && end != null ? round6(end - start) : null,
                 text: normalizeText(part.text),
+                speaker: index === 0 ? current.speaker : '1',
+                keep: index === 0 ? current.keep : '保留',
+                voice_type: index === 0 ? current.voice_type : '说话',
+                quality: index === 0 ? current.quality : '无问题',
                 round_id: index === 0 ? current.round_id : null,
-                structural_placeholder: false
+                structural_placeholder: index !== 0
               };
             }).filter(Boolean);
             if (parts.length === 2) {
@@ -380,7 +378,7 @@
           result.review_required.push('split_regionはユーザーの個別承認が必要です');
         }
       } else if (operation.type === 'add_region') {
-        if (operation.region_id) result.errors.push('add_regionにregion_idを指定できません。Bridgeがdry-run時に衝突しないIDを予約します');
+        if (operation.region_id) result.errors.push('add_regionにregion_idを指定できません。正式IDはAIDP自身が適用時に生成します');
         const source = operation.region;
         if (!source || typeof source !== 'object' || Array.isArray(source)) {
           result.errors.push('add_regionのregionがありません');
@@ -388,32 +386,35 @@
           const allowedKeys = new Set(['start', 'end', 'text', 'speaker', 'keep', 'voice_type']);
           const extra = Object.keys(source).filter(key => !allowedKeys.has(key));
           if (extra.length) result.errors.push(`add_regionに指定できないフィールドがあります: ${extra.join(', ')}`);
-          const required = ['start', 'end', 'text', 'speaker', 'keep', 'voice_type'];
+          const required = ['start', 'end', 'text'];
           const missing = required.filter(key => source[key] === undefined);
           if (missing.length) result.errors.push(`add_regionの必須項目が不足しています: ${missing.join(', ')}`);
           if (!normalizeText(source.text).trim()) result.errors.push('add_regionのtextを空にできません');
-          if (!String(source.speaker ?? '').trim()) result.errors.push('add_regionのspeakerを空にできません');
-          if (String(source.keep ?? '') !== '保留') result.errors.push('初期安全版のadd_regionはkeep=保留だけを作成できます');
-          if (!['说话', '歌词'].includes(String(source.voice_type ?? ''))) result.errors.push('add_regionのvoice_typeは说话または歌词である必要があります');
+          const requestedSpeaker = String(source.speaker ?? '1');
+          const requestedKeep = String(source.keep ?? '保留');
+          const requestedVoiceType = String(source.voice_type ?? '说话');
+          if (requestedSpeaker !== '1' || requestedKeep !== '保留' || requestedVoiceType !== '说话') {
+            result.errors.push('AIDP native addの初期値はspeaker=1 / keep=保留 / voice_type=说话です。話者・保留/丢弃・人声类型の自動変更は行いません');
+          }
           const start = numberOrNull(source.start);
           const end = numberOrNull(source.end);
           if (start == null || end == null) result.errors.push('add_regionのstart/endは有限数である必要があります');
           if (start != null && end != null && end <= start) result.errors.push('add_regionはend > startである必要があります');
           const created = {
-            region_id: makeStructuralRegionId(snapshot, operation, 0, usedRegionIds),
+            region_id: makeStructuralPlaceholderId(operation, 0, usedRegionIds),
             start: round6(start),
             end: round6(end),
             duration: start != null && end != null ? round6(end - start) : null,
             text: normalizeText(source.text),
-            speaker: String(source.speaker ?? ''),
+            speaker: String(source.speaker ?? '1'),
             speaker_desc: null,
-            keep: String(source.keep ?? ''),
-            voice_type: String(source.voice_type ?? ''),
+            keep: String(source.keep ?? '保留'),
+            voice_type: String(source.voice_type ?? '说话'),
             quality: '无问题',
             round_id: null,
             table: null,
             source_alignment: { model_present: false, wave_present: false, table_present: false },
-            structural_placeholder: false
+            structural_placeholder: true
           };
           result.after = clone(created);
           result.changes = [{ field: 'add', before: null, after: clone(created) }];
@@ -532,6 +533,7 @@
     stableStringify,
     expectedMatches,
     diffFields,
+    isStructuralPlaceholderId,
     dryRun
   };
 })();
