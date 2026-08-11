@@ -1,0 +1,29 @@
+{
+  "schema": "aidp-chatgpt-patch/v3",
+  "case_key": "/management/task-v2/CASE_ID/mark-v3/1",
+  "source_snapshot_id": "sha256:PASTE_FROM_CASE_JSON",
+  "source_fingerprint": "sha256:PASTE_FROM_CASE_JSON",
+  "operations": [
+    {
+      "op_id": "op-001",
+      "type": "update_region",
+      "region_id": "region_20",
+      "expected": {
+        "start": 52.11,
+        "end": 54.02,
+        "text": "変更前字幕",
+        "speaker": "2",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "set": {
+        "start": 52.38,
+        "end": 54.31,
+        "text": "その色、すごく似合うから。"
+      },
+      "reason": "音声の語頭・語尾と字幕を照合して修正",
+      "confidence": 0.94,
+      "requires_user_review": false
+    }
+  ]
+}

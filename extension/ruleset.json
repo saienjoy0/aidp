@@ -1,0 +1,88 @@
+{
+  "schema": "aidp-ruleset/v1",
+  "ruleset_name": "单语种译制片字幕对齐－标检规则",
+  "ruleset_version": "2026-07-23",
+  "source_kind": "training-and-written-rule-compilation",
+  "source_sha256": "fa148a2c604de3ed6e4abc4c62947d15e07c51cfa7d8f958d864a620d7d6e074",
+  "source_priority_note": "最新成文规则与最新培训口径优先；旧培训仅补充不冲突的操作说明。",
+  "time_rules": {
+    "leading_trailing_silence_max_sec": 0.5,
+    "internal_silence_split_threshold_sec": 1.0,
+    "normal_region_max_sec": 10.0,
+    "lyrics_exempt_from_10_sec": true,
+    "only_human_voice_should_be_captured": true,
+    "complete_semantic_unit_required": true,
+    "protected_span_priority_over_silence_split": true
+  },
+  "speaker_rules": {
+    "speaker_change_requires_split": true,
+    "same_speaker_adjacent_overlap_forbidden": true,
+    "different_speaker_overlap_allowed_when_genuinely_simultaneous": true,
+    "discarded_regions_excluded_from_speaker_sequence": true,
+    "speaker_sequence_starts_at_1_for_first_retained_region": true,
+    "speaker_sequence_must_not_skip": true,
+    "visual_audio_judgment_required_for_ambiguous_overlap": true
+  },
+  "label_rules": {
+    "text_omission_is_case_level_common_information": true,
+    "text_omission_is_not_a_small_region_error": true,
+    "keep_discard_must_be_correct": true,
+    "voice_type_must_be_correct": true
+  },
+  "japanese_rules": {
+    "case_level_notation_consistency_required": true,
+    "itn_and_punctuation_consistency_required": true
+  },
+  "aidp_operational_notes": {
+    "speaker_filter_allows_text_and_label_edits": true,
+    "speaker_filter_blocks_waveform_timestamp_edits": true,
+    "speaker_filter_blocks_region_deletion": true,
+    "submit_validation_checks_speaker_sequence": true
+  },
+  "machine_check_scope": {
+    "implemented_in_v0_6_1": [
+      "region duration",
+      "timestamp ordering and range",
+      "model-wave-table identity and value consistency",
+      "overlap geometry classification",
+      "decoded media duration range",
+      "case snapshot stability",
+      "discarded and lyrics duration classification"
+    ],
+    "not_claimed_without_audio_or_visual_analysis": [
+      "leading or trailing silence content",
+      "internal silence content",
+      "speaker identity",
+      "genuine simultaneous speech",
+      "semantic-unit correctness",
+      "text omission",
+      "audio-video synchronization",
+      "sensitive-content judgment"
+    ],
+    "implemented_in_v0_7_integrated_beta": [
+      "region duration and timestamp ordering",
+      "model-wave-table identity and value consistency",
+      "overlap geometry classification",
+      "decoded media duration range",
+      "case snapshot stability",
+      "patch schema/case/snapshot/fingerprint/expected validation",
+      "dry-run simulation for start/end/text",
+      "post-apply triple-source verification",
+      "transaction journal and compensating rollback"
+    ]
+  },
+  "bridge_policy": {
+    "read_only": false,
+    "default_editable_fields": [
+      "start",
+      "end",
+      "text"
+    ],
+    "speaker_fields_auto_editable": false,
+    "label_fields_auto_editable": false,
+    "structural_operations_enabled": false,
+    "submission_automated": false,
+    "staging_automated": false,
+    "external_server_upload": false
+  }
+}
