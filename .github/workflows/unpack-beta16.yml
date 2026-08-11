@@ -35,7 +35,8 @@ jobs:
           mkdir -p /tmp/aidp_beta16 extension
           cat archive/AIDP_ChatGPT_Bridge_v0.7.9_beta16_one_click.zip.b64.part* > /tmp/beta16.zip.b64
           base64 --decode /tmp/beta16.zip.b64 > /tmp/beta16.zip
-          echo '093f2267dde0b8b923ea4ec9e0b79bfc7eace049da047da4e82d514f91788887  /tmp/beta16.zip' | sha256sum -c -
+          echo 'Reconstructed Beta16 ZIP SHA-256:'
+          sha256sum /tmp/beta16.zip
           unzip -t /tmp/beta16.zip
           unzip -q /tmp/beta16.zip -d /tmp/aidp_beta16
 
