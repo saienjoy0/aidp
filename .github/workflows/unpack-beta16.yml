@@ -27,7 +27,7 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.head_ref || github.ref_name }}
 
-      - name: Reconstruct and extract Beta16
+      - name: Reconstruct archived prefix
         shell: bash
         run: |
           set -euo pipefail
@@ -35,23 +35,138 @@ jobs:
           mkdir -p /tmp/aidp_beta16 extension
           cat archive/AIDP_ChatGPT_Bridge_v0.7.9_beta16_one_click.zip.b64.part* > /tmp/beta16.zip.b64
           base64 --decode /tmp/beta16.zip.b64 > /tmp/beta16.zip
-          echo 'Reconstructed Beta16 ZIP SHA-256:'
+          echo 'Reconstructed archived prefix SHA-256:'
           sha256sum /tmp/beta16.zip
-          unzip -t /tmp/beta16.zip
-          unzip -q /tmp/beta16.zip -d /tmp/aidp_beta16
+          echo 'Archived prefix bytes:'
+          wc -c /tmp/beta16.zip
 
-          mapfile -t top_entries < <(find /tmp/aidp_beta16 -mindepth 1 -maxdepth 1 -printf '%p\n')
-          if [[ ${#top_entries[@]} -eq 1 && -d "${top_entries[0]}" ]]; then
-            cp -a "${top_entries[0]}/." extension/
-          else
-            cp -a /tmp/aidp_beta16/. extension/
-          fi
+      - name: Recover complete ZIP local entries
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import binascii, json, struct, zlib
+          from pathlib import Path, PurePosixPath
 
-          test -f extension/manifest.json
-          echo 'Recovered files:'
+          src = Path('/tmp/beta16.zip').read_bytes()
+          out = Path('extension')
+          out.mkdir(parents=True, exist_ok=True)
+          sig = b'PK\x03\x04'
+          pos = 0
+          recovered = []
+          incomplete = None
+
+          def safe_name(raw):
+              try:
+                  name = raw.decode('utf-8')
+              except UnicodeDecodeError:
+                  name = raw.decode('cp437')
+              p = PurePosixPath(name)
+              if p.is_absolute() or '..' in p.parts:
+                  raise RuntimeError(f'unsafe ZIP path: {name!r}')
+              return name
+
+          while True:
+              idx = src.find(sig, pos)
+              if idx < 0:
+                  break
+              if idx + 30 > len(src):
+                  incomplete = f'header truncated at byte {idx}'
+                  break
+              (signature, version, flags, method, mtime, mdate, crc32_expected,
+               csize, usize, nlen, elen) = struct.unpack_from('<IHHHHHIIIHH', src, idx)
+              name_start = idx + 30
+              name_end = name_start + nlen
+              extra_end = name_end + elen
+              if extra_end > len(src):
+                  incomplete = f'name/extra truncated at byte {idx}'
+                  break
+              name = safe_name(src[name_start:name_end])
+              data_start = extra_end
+
+              try:
+                  if name.endswith('/'):
+                      (out / name).mkdir(parents=True, exist_ok=True)
+                      recovered.append((name, 0, 'dir'))
+                      pos = data_start
+                      continue
+
+                  if method == 0:
+                      if csize == 0 and (flags & 0x08):
+                          next_idx = src.find(sig, data_start)
+                          if next_idx < 0:
+                              incomplete = f'stored entry without known size is incomplete: {name}'
+                              break
+                          comp = src[data_start:next_idx]
+                          consumed = len(comp)
+                      else:
+                          if data_start + csize > len(src):
+                              incomplete = f'entry data truncated: {name}'
+                              break
+                          comp = src[data_start:data_start+csize]
+                          consumed = csize
+                      payload = comp
+
+                  elif method == 8:
+                      if csize > 0 and not (flags & 0x08):
+                          if data_start + csize > len(src):
+                              incomplete = f'entry data truncated: {name}'
+                              break
+                          comp = src[data_start:data_start+csize]
+                          payload = zlib.decompress(comp, -15)
+                          consumed = csize
+                      else:
+                          dec = zlib.decompressobj(-15)
+                          remaining = src[data_start:]
+                          payload = dec.decompress(remaining)
+                          payload += dec.flush()
+                          if not dec.eof:
+                              incomplete = f'deflate stream truncated: {name}'
+                              break
+                          consumed = len(remaining) - len(dec.unused_data)
+                  else:
+                      incomplete = f'unsupported compression method {method} for {name}'
+                      break
+
+                  if usize and len(payload) != usize:
+                      raise RuntimeError(f'uncompressed size mismatch for {name}: {len(payload)} != {usize}')
+                  if crc32_expected and (binascii.crc32(payload) & 0xffffffff) != crc32_expected:
+                      raise RuntimeError(f'CRC mismatch for {name}')
+
+                  target = out / name
+                  target.parent.mkdir(parents=True, exist_ok=True)
+                  target.write_bytes(payload)
+                  recovered.append((name, len(payload), 'file'))
+                  pos = data_start + consumed
+
+                  # If bit 3 is set, skip the optional data descriptor.
+                  if flags & 0x08:
+                      if src[pos:pos+4] == b'PK\x07\x08':
+                          pos += 16
+                      elif pos + 12 <= len(src):
+                          pos += 12
+              except Exception as e:
+                  incomplete = f'{name}: {e}'
+                  break
+
+          print('Recovered complete local entries:')
+          for name, size, kind in recovered:
+              print(f'{kind:4} {size:9d} {name}')
+          print('Recovery stop reason:', incomplete or 'no more local file headers')
+
+          required = [
+              'manifest.json', 'service_worker.js', 'content.js', 'sidepanel.html',
+              'sidepanel.js', 'patch_engine.js', 'offscreen.html', 'offscreen.js', 'ruleset.json'
+          ]
+          missing = [p for p in required if not (out / p).is_file()]
+          print('Required extension files missing:', json.dumps(missing, ensure_ascii=False))
+          Path('/tmp/recovery_missing.json').write_text(json.dumps(missing), encoding='utf-8')
+          PY
+
+          echo 'Recovered files on disk:'
           find extension -maxdepth 2 -type f -printf '%P\n' | sort
 
-      - name: Static checks
+      - name: Static checks for recovered source
         shell: bash
         run: |
           set -euo pipefail
@@ -59,24 +174,26 @@ jobs:
           python - <<'PY'
           import json
           from pathlib import Path
-          for name in ('manifest.json', 'ruleset.json', 'sample_patch.json'):
-              p = Path('extension') / name
-              if p.exists():
-                  json.loads(p.read_text(encoding='utf-8'))
-                  print('JSON OK:', p)
+          for p in Path('extension').rglob('*.json'):
+              json.loads(p.read_text(encoding='utf-8'))
+              print('JSON OK:', p)
           PY
 
-      - name: Upload recovered source artifact
+      - name: Upload recovered prefix artifact
         uses: actions/upload-artifact@v4
         with:
-          name: aidp-beta16-source
+          name: aidp-beta16-recovered-prefix
           path: extension
           if-no-files-found: error
 
-      - name: Commit recovered source to branch
+      - name: Commit recovered source only if complete
         shell: bash
         run: |
           set -euo pipefail
+          if [[ "$(cat /tmp/recovery_missing.json)" != '[]' ]]; then
+            echo 'Required files are still missing; do not commit an incomplete extension tree.'
+            exit 0
+          fi
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add -- extension
