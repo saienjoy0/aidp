@@ -1,0 +1,56 @@
+name: Unpack Beta16 source
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - aidp-beta17-recovery
+    paths:
+      - .github/workflows/unpack-beta16.yml
+
+permissions:
+  contents: write
+
+jobs:
+  unpack:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct and extract Beta16
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/aidp_beta16 extension
+          mkdir -p /tmp/aidp_beta16 extension
+          cat archive/AIDP_ChatGPT_Bridge_v0.7.9_beta16_one_click.zip.b64.part* > /tmp/beta16.zip.b64
+          base64 --decode /tmp/beta16.zip.b64 > /tmp/beta16.zip
+          unzip -t /tmp/beta16.zip
+          unzip -q /tmp/beta16.zip -d /tmp/aidp_beta16
+
+          mapfile -t top_entries < <(find /tmp/aidp_beta16 -mindepth 1 -maxdepth 1 -printf '%p\n')
+          if [[ ${#top_entries[@]} -eq 1 && -d "${top_entries[0]}" ]]; then
+            cp -a "${top_entries[0]}/." extension/
+          else
+            cp -a /tmp/aidp_beta16/. extension/
+          fi
+
+          test -f extension/manifest.json
+          echo 'Recovered files:'
+          find extension -maxdepth 2 -type f -printf '%P\n' | sort
+
+      - name: Commit recovered source
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -- extension
+          if git diff --cached --quiet; then
+            echo 'No source changes to commit.'
+            exit 0
+          fi
+          git commit -m 'Recover Beta16 extension source'
+          git push origin HEAD:aidp-beta17-recovery
