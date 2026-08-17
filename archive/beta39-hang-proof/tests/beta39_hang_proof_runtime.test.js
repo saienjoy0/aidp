@@ -1,0 +1,22 @@
+'use strict';
+const fs=require('fs'); const path=require('path');
+const root=path.resolve(__dirname,'../..');
+const sw=fs.readFileSync(path.join(root,'service_worker.js'),'utf8');
+const side=fs.readFileSync(path.join(root,'sidepanel.js'),'utf8');
+const manifest=JSON.parse(fs.readFileSync(path.join(root,'manifest.json'),'utf8'));
+function ok(v,m){if(!v) throw new Error(m);}
+ok(manifest.version==='0.7.9.39','manifest beta39');
+ok(sw.includes("const VERSION = '0.7.9-beta.39'"),'runtime beta39');
+ok(sw.includes('AIDP_RENDERER_TIMEOUT'),'renderer hard timeout missing');
+ok(sw.includes('AIDP_CONTENT_TIMEOUT'),'content hard timeout missing');
+ok(sw.includes('scriptingExecuteBounded'),'bounded executeScript missing');
+ok(sw.includes('tabsSendMessageBounded'),'bounded tabs message missing');
+ok(!sw.includes('Promise.resolve(maybePromise)'),'native thenable assimilation remains');
+ok(!sw.includes('rollbackPromise'),'rollback thenable inspection remains');
+ok(sw.includes('target.ref.handleRemoveRegion(actualRegion);'),'native delete invocation missing');
+ok(sw.includes('target.props.onChange(Array.from(regionsRef));'),'exact-add onChange missing');
+ok(sw.includes('if (!error?.defer_recovery && error?.code !=='),'unsafe compensation guard missing');
+ok(sw.includes('wrapped.defer_recovery = Boolean(error?.defer_recovery)'),'defer recovery propagation missing');
+ok(side.includes('3 * 60 * 1000'),'sidepanel 3-minute wallclock missing');
+ok(side.includes('変更処理を3分で強制打ち切りました'),'sidepanel explicit hard stop missing');
+console.log('beta39 hang-proof runtime test: PASS');
