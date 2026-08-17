@@ -1,0 +1,28 @@
+{
+  "schema": "aidp-chatgpt-patch/v3",
+  "case_key": "/management/task-v2/7662960445883420462/mark-v3/1",
+  "source_snapshot_id": "sha256:3cc51008ecee47a06ca9ddaeaad0324e260bae069328905e258eb3af8eb9bb76",
+  "source_fingerprint": "sha256:11b8115ebd7f5b1ac02a94db0bbf0f5792fa1dbd5d543d702ff60d87ea0ebcae",
+  "generated_at": "2026-08-17T06:50:50.078549Z",
+  "operations": [
+    {
+      "op_id": "restore-region29-after-beta40-partial",
+      "type": "update_region",
+      "region_id": "region_29",
+      "expected": {
+        "start": 22.2604,
+        "end": 23.7004,
+        "text": "大きいのはこの2つだ！",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "set": {
+        "start": 22.1604,
+        "end": 23.6004,
+        "text": "大きいのはこの2つだ。"
+      },
+      "reason": "Beta40 partial-state後、region_28は既に復元済み。未適用のregion_29のみProbe前値へ戻す。"
+    }
+  ]
+}
