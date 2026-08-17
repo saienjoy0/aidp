@@ -14,4 +14,4 @@ Beta42 changes:
 
 Package SHA-256: `7515478098e7080918ec563f7d2a9012555aef31d4f0ce011a5e31a45815c612`.
 
-The exact ZIP is stored below as ordered Base64 chunks `AIDP_ChatGPT_Bridge_v0.7.9_beta42_reload_authoritative.zip.b64.partXX`.
+The exact Beta41→Beta42 source delta is stored as `beta41_to_beta42.patch.gz.b64`. The complete packaged ZIP is provided in the ChatGPT artifact for this release and is identified by the checksum above.
