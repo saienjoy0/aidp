@@ -1,0 +1,105 @@
+{
+  "schema": "aidp-chatgpt-patch/v3",
+  "case_key": "/management/task-v2/7662960445883420462/mark-v3/1",
+  "source_snapshot_id": "sha256:0eea744d0f93feeb5a35a03220b1f5daf61872a74708c8c1ddac27f392343c29",
+  "source_fingerprint": "sha256:3ffbbe2890680a21841cc277fdfdba578b23286da076b532068ac0a79e2131f6",
+  "generated_at": "2026-08-17T02:30:00Z",
+  "operations": [
+    {
+      "op_id": "restore-all-01-delete-split-test",
+      "type": "delete_region",
+      "region_id": "region_1786608670417_6xr2dyn",
+      "expected": {
+        "start": 74.345759,
+        "end": 77.711205,
+        "text": "",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "reason": "split契約Probeで追加したテストregionを削除する。",
+      "requires_user_review": true
+    },
+    {
+      "op_id": "restore-all-02-expand-original",
+      "type": "update_region",
+      "region_id": "region_1786431519182_j1idsot",
+      "expected": {
+        "start": 72.392545,
+        "end": 74.167542,
+        "text": "",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "set": {
+        "end": 79.980585
+      },
+      "reason": "split契約Probeで短縮した元regionの末尾をProbe前値へ戻す。"
+    },
+    {
+      "op_id": "restore-all-03-readd-blank",
+      "type": "add_region",
+      "region": {
+        "start": 68.392113,
+        "end": 72.132696,
+        "text": "",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "reason": "delete Probeで消した空regionを同等状態で再生成する。",
+      "requires_user_review": true
+    },
+    {
+      "op_id": "restore-all-04-readd-region40",
+      "type": "add_region",
+      "region": {
+        "start": 58.516693,
+        "end": 62.436703,
+        "text": "おい待て、どこ行くこの野郎。",
+        "speaker": "5",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "reason": "観測開始前に誤削除したregion_40相当を同等状態で再生成する。",
+      "requires_user_review": true
+    },
+    {
+      "op_id": "restore-all-05-region28-time",
+      "type": "update_region",
+      "region_id": "region_28",
+      "expected": {
+        "start": 15.18038,
+        "end": 17.16039,
+        "text": "近々、大量輸送があると分かった。",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "set": {
+        "start": 15.08038
+      },
+      "reason": "P1 update Probeで+0.1秒した開始時刻をProbe前値へ戻す。"
+    },
+    {
+      "op_id": "restore-all-06-region29-combined",
+      "type": "update_region",
+      "region_id": "region_29",
+      "expected": {
+        "start": 22.2604,
+        "end": 23.7004,
+        "text": "大きいのはこの2つだ！",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "set": {
+        "start": 22.1604,
+        "end": 23.6004,
+        "text": "大きいのはこの2つだ。"
+      },
+      "reason": "P1 combined Probeで変更したstart/end/textをProbe前値へ戻す。"
+    }
+  ]
+}
