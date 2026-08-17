@@ -1,0 +1,39 @@
+{
+  "schema": "aidp-chatgpt-patch/v3",
+  "case_key": "/management/task-v2/7662960445883420462/mark-v3/1",
+  "source_snapshot_id": "sha256:8828a85dca7e1e383c85ea8513bdb35bfa1a4a391027b597554f83e89b135bc2",
+  "source_fingerprint": "sha256:fdf67952f457e6ead9291a4603c36209dbfc8dc05523d3f62ab95143ce59a6e3",
+  "generated_at": "2026-08-17T07:02:00Z",
+  "operations": [
+    {
+      "op_id": "restore-probe-01-delete-split-test",
+      "type": "delete_region",
+      "region_id": "region_1786608670417_6xr2dyn",
+      "expected": {"start": 74.345759, "end": 77.711205, "text": "", "speaker": "1", "keep": "保留", "voice_type": "说话"},
+      "reason": "split契約Probeで追加したテストregionを削除してProbe前状態へ戻す。",
+      "requires_user_review": true
+    },
+    {
+      "op_id": "restore-probe-02-expand-original",
+      "type": "update_region",
+      "region_id": "region_1786431519182_j1idsot",
+      "expected": {"start": 72.392545, "end": 74.167542, "text": "", "speaker": "1", "keep": "保留", "voice_type": "说话"},
+      "set": {"end": 79.980585},
+      "reason": "split契約Probeで短縮した元regionの末尾をProbe前値へ戻す。"
+    },
+    {
+      "op_id": "restore-probe-03-readd-blank-region",
+      "type": "add_region",
+      "region": {"start": 68.392113, "end": 72.132696, "text": "", "speaker": "1", "keep": "保留", "voice_type": "说话"},
+      "reason": "delete Probe中に削除した空regionを同一時刻・同一ラベルで再生成する。AIDPが新しい正式IDを発行する。",
+      "requires_user_review": true
+    },
+    {
+      "op_id": "restore-probe-04-readd-region40",
+      "type": "add_region",
+      "region": {"start": 58.516693, "end": 62.436703, "text": "おい待て、どこ行くこの野郎。", "speaker": "5", "keep": "保留", "voice_type": "说话"},
+      "reason": "観測開始前に誤削除したregion_40の内容・時刻・speakerを同等状態で再生成する。AIDPが新しい正式IDを発行する。",
+      "requires_user_review": true
+    }
+  ]
+}
