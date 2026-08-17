@@ -12,6 +12,6 @@ $b64 = ($parts | ForEach-Object { Get-Content $_.FullName -Raw }) -join ''
 [IO.File]::WriteAllBytes('AIDP_ChatGPT_Bridge_v0.7.9_beta37_runtime_only.zip', [Convert]::FromBase64String(($b64 -replace '\s','')))
 ```
 
-Expected ZIP SHA256: `c0b1761aa1ff9dc068c37d33442b2d6f79b542289820532bc2a1d19a51826f75`.
+Expected ZIP SHA256: `09fe404ab97757eb8ca75faa00e5673a237e028194b71727ca04ac7d8b4225d6`.
 
 Safety invariants: dry-run before apply, per-tab isolation, automatic compensation on failed apply, and no automatic AIDP staging/submission.
