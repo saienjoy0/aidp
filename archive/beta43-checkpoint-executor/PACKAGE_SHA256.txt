@@ -1,0 +1,4 @@
+AIDP_ChatGPT_Bridge_v0.7.9_beta43_checkpoint_executor.zip
+SHA-256: f2accf561f8cd0f4138c0b9ae37519a7ce99bbb68dab0d00ca4f9a3e013ccdda
+Local validation: unzip -t PASS; beta43 version sync PASS; checkpoint executor PASS; patch/recovery/structural engine tests PASS; active JavaScript syntax PASS.
+Live AIDP beta43 structural write: NOT YET RUN.
