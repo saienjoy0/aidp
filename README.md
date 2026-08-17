@@ -1,12 +1,12 @@
 # AIDP ↔ ChatGPT Bridge
 
-Current development line: **0.7.9-beta.41** (2026-08-17).
+Current development line: **0.7.9-beta.42** (2026-08-17).
 
 Current tracked manifest / UI shell: `current/`.
 
-Latest audit record: `archive/beta41-deferred-local-settlement/`.
+Latest audit record: `archive/beta42-reload-authoritative/`.
 
-Beta 41 incorporates live Beta 40 evidence: `region_28` persisted exactly even though local React/Neeko Model/Wave polling reported unsettled and aborted before `region_29`. Ordinary update local settlement is therefore diagnostic/deferred rather than a hard success/failure authority. Final full-state `SubmitTempItemAnswer` HTTP 200 ACK and reload-derived persistence verification remain mandatory.
+Live Beta41 evidence proved that both `region_28` and `region_29` persisted correctly even though strict intercepted autosave matching failed and persistence readiness later timed out at `Table=20, Model=20, Wave=0`. Beta42 treats intercepted `SubmitTempItemAnswer` matching as bounded transport evidence, not final truth. Final success is determined from canonical AIDP state reconstructed after reload, with a longer but bounded slow-Wave readiness window.
 
 Normal target workflow:
 1. Export case ZIP
