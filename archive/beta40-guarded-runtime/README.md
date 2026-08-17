@@ -14,7 +14,7 @@ Safety model:
 
 Live AIDP Beta 40 write validation has **not yet been run**. After the unknown Beta 38 state, the next live action is read-only only: install/reload Beta 40, reload the AIDP case, do not press ③, export a fresh case ZIP with ①.
 
-Local release ZIP SHA-256:
+Release ZIP SHA-256:
 `f0907ca362bd9fcf2703d14d5d2f7219054a20d8112714411a2aec327f08cc0f`
 
-The release ZIP is stored below as ordered Base64 chunks named `AIDP_ChatGPT_Bridge_v0.7.9_beta40_guarded_runtime.zip.b64.partXX`. Concatenate the chunks in lexical order and Base64-decode to reconstruct the exact ZIP.
+GitHub tracks the Beta 40 current manifest/UI shell and audit/checksum record here. The packaged release artifact itself is supplied from the project chat while live validation is pending.
