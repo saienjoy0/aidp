@@ -1,0 +1,374 @@
+--- /mnt/data/aidp_beta37_src/AIDP_ChatGPT_Bridge_v0.7.9_beta37_watchdog_fix/service_worker.js	2026-08-17 01:59:19.000000000 +0000
++++ /mnt/data/aidp_beta38_src/AIDP_ChatGPT_Bridge_v0.7.9_beta38_transaction_settlement/service_worker.js	2026-08-17 02:27:13.434309070 +0000
+@@ -2,7 +2,7 @@
+ 
+ importScripts('patch_engine.js', 'recovery_engine.js');
+ 
+-const VERSION = '0.7.9-beta.37';
++const VERSION = '0.7.9-beta.38';
+ const OFFSCREEN_URL = 'offscreen.html';
+ const RULESET_URL = 'ruleset.json';
+ const EXPORT_PORT_NAME = 'AIDP_EXPORT_JOB_V1';
+@@ -2683,17 +2683,20 @@
+       args: [traceId, expected]
+     });
+     last = result?.[0]?.result || null;
+-    const quiet = last?.last_requested_ms && Date.now() - Number(last.last_requested_ms) >= 2500;
+-    if (last?.matched && quiet) {
++    // Beta38: a matching SubmitTempItemAnswer HTTP 200 whose data/dataMap payload
++    // equals the requested state is the transport ACK. Do not require a later
++    // "quiet period": AIDP legitimately emits several autosaves in a burst.
++    // Server-derived reload verification remains the final authority.
++    if (last?.matched) {
+       return {
+         ok: true,
+         trace_id: traceId,
+         elapsed_ms: Date.now() - startedAt,
+-        quiet_period_ms: 2500,
++        ack_mode: 'matching_http_200_payload',
+         records: last.records || []
+       };
+     }
+-    await sleep(750);
++    await sleep(500);
+   }
+   const error = new Error(`一時保存PayloadのHTTP 200とdata/dataMap一致を確認できませんでした（${Math.round(timeoutMs / 1000)}秒）`);
+   error.code = 'AIDP_TEMP_SAVE_UNCONFIRMED';
+@@ -2741,7 +2744,7 @@
+   }
+ }
+ 
+-async function performRegionUpdate(tabId, operation) {
++async function performRegionUpdate(tabId, operation, options = {}) {
+   const set = operation?.set || {};
+   const neekoSet = {};
+   if (set.start !== undefined) neekoSet.start = set.start;
+@@ -2752,6 +2755,7 @@
+   const hasNeekoUpdate = Object.keys(neekoSet).length > 0;
+   const hasText = set.text !== undefined;
+   const hasMutation = hasNeekoUpdate || hasText;
++  const deferSaveAck = Boolean(options?.defer_save_ack);
+   const traceId = `save-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+   const result = {
+     ok: true,
+@@ -2770,7 +2774,7 @@
+     // the speaker filter is active. Text-only edits remain allowed.
+     result.structural_precheck = await performNativeControlledStructure(tabId, 'precheck');
+   }
+-  await installTempSaveTrace(tabId, traceId);
++  if (!deferSaveAck) await installTempSaveTrace(tabId, traceId);
+   let textApplied = false;
+   let neekoApplied = false;
+   try {
+@@ -2810,7 +2814,15 @@
+       quality: expected.quality,
+       expected_count: operation?.expected_region_count ?? operation?.expected_regions_after?.length
+     };
+-    result.save = await waitForTempSavePayload(tabId, traceId, saveExpectation);
++    if (deferSaveAck) {
++      result.save = {
++        ok: true,
++        deferred_to_transaction: true,
++        expected: saveExpectation
++      };
++    } else {
++      result.save = await waitForTempSavePayload(tabId, traceId, saveExpectation);
++    }
+     return result;
+   } catch (error) {
+     if (error?.code !== 'AIDP_TEMP_SAVE_UNCONFIRMED' && operation?.before) {
+@@ -2854,7 +2866,7 @@
+     wrapped.adapter_result = result;
+     throw wrapped;
+   } finally {
+-    await removeTempSaveTrace(tabId, traceId);
++    if (!deferSaveAck) await removeTempSaveTrace(tabId, traceId);
+   }
+ }
+ 
+@@ -2925,6 +2937,7 @@
+ async function performStructuralAdd(tabId, operation, context = {}) {
+   const region = operation?.after;
+   const journal = context?.journal || null;
++  const deferSaveAck = Boolean(context?.defer_save_ack);
+   if (!region?.region_id || !isStructuralPlaceholderId(region.region_id)) {
+     throw new Error('add_regionのnative placeholder IDがありません');
+   }
+@@ -2942,7 +2955,7 @@
+     save: null,
+     compensated: false
+   };
+-  await installTempSaveTrace(tabId, traceId);
++  if (!deferSaveAck) await installTempSaveTrace(tabId, traceId);
+   let actualId = '';
+   try {
+     result.native = await performNativeControlledStructure(tabId, 'native_add', {
+@@ -2974,7 +2987,7 @@
+       result.labels = await performNeekoUpdate(tabId, { region_id: actualId, set: labelSet });
+     }
+ 
+-    result.save = await waitForTempSavePayload(tabId, traceId, {
++    const saveExpectation = {
+       region_id: actualId,
+       text: resolvedRegion?.text,
+       start: resolvedRegion?.start,
+@@ -2984,7 +2997,12 @@
+       voice_type: resolvedRegion?.voice_type,
+       quality: resolvedRegion?.quality,
+       expected_count: operation.expected_regions_after?.length
+-    });
++    };
++    if (deferSaveAck) {
++      result.save = { ok: true, deferred_to_transaction: true, expected: saveExpectation };
++    } else {
++      result.save = await waitForTempSavePayload(tabId, traceId, saveExpectation);
++    }
+     return result;
+   } catch (error) {
+     const compensationErrors = [];
+@@ -3005,13 +3023,14 @@
+     wrapped.adapter_result = result;
+     throw wrapped;
+   } finally {
+-    await removeTempSaveTrace(tabId, traceId);
++    if (!deferSaveAck) await removeTempSaveTrace(tabId, traceId);
+   }
+ }
+ 
+-async function performStructuralDelete(tabId, operation) {
++async function performStructuralDelete(tabId, operation, context = {}) {
+   const region = operation?.before;
+   if (!region?.region_id) throw new Error('delete_regionの対象region IDがありません');
++  const deferSaveAck = Boolean(context?.defer_save_ack);
+   const traceId = `save-struct-delete-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+   const result = {
+     ok: true,
+@@ -3021,7 +3040,7 @@
+     save: null,
+     compensated: false
+   };
+-  await installTempSaveTrace(tabId, traceId);
++  if (!deferSaveAck) await installTempSaveTrace(tabId, traceId);
+   let removed = false;
+   try {
+     result.native = await performNativeControlledStructure(tabId, 'delete', {
+@@ -3029,10 +3048,15 @@
+       region
+     });
+     removed = true;
+-    result.save = await waitForTempSavePayload(tabId, traceId, {
++    const saveExpectation = {
+       absent_region_id: region.region_id,
+       expected_count: operation.expected_regions_after?.length
+-    });
++    };
++    if (deferSaveAck) {
++      result.save = { ok: true, deferred_to_transaction: true, expected: saveExpectation };
++    } else {
++      result.save = await waitForTempSavePayload(tabId, traceId, saveExpectation);
++    }
+     return result;
+   } catch (error) {
+     const compensationErrors = [];
+@@ -3047,13 +3071,14 @@
+     wrapped.adapter_result = result;
+     throw wrapped;
+   } finally {
+-    await removeTempSaveTrace(tabId, traceId);
++    if (!deferSaveAck) await removeTempSaveTrace(tabId, traceId);
+   }
+ }
+ 
+ async function performStructuralSplit(tabId, operation, context = {}) {
+   const parts = Array.isArray(operation?.after) ? operation.after : [];
+   const journal = context?.journal || null;
++  const deferSaveAck = Boolean(context?.defer_save_ack);
+   if (parts.length !== 2) throw new Error('split_regionの確定partが2件ではありません');
+   if (!journal) throw new Error('split_regionのjournal contextがありません');
+   let [first, second] = parts;
+@@ -3089,11 +3114,11 @@
+       before: operation.before,
+       after: first,
+       expected_region_count: Math.max(0, Number(operation.expected_regions_after?.length || 1) - 1)
+-    });
++    }, { defer_save_ack: deferSaveAck });
+     firstUpdated = true;
+ 
+     const traceId = `save-split-add-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+-    await installTempSaveTrace(tabId, traceId);
++    if (!deferSaveAck) await installTempSaveTrace(tabId, traceId);
+     try {
+       result.add = await performNativeControlledStructure(tabId, 'native_add', {
+         op_id: operation.op_id,
+@@ -3125,12 +3150,17 @@
+ 
+       // At this point both parts exist, so require the complete post-split state
+       // in AIDP's own autosave payload.
+-      result.add_save = await waitForTempSavePayload(tabId, traceId, {
++      const saveExpectation = {
+         expected_targets: [first, second],
+         expected_count: operation.expected_regions_after?.length
+-      });
++      };
++      if (deferSaveAck) {
++        result.add_save = { ok: true, deferred_to_transaction: true, expected: saveExpectation };
++      } else {
++        result.add_save = await waitForTempSavePayload(tabId, traceId, saveExpectation);
++      }
+     } finally {
+-      await removeTempSaveTrace(tabId, traceId);
++      if (!deferSaveAck) await removeTempSaveTrace(tabId, traceId);
+     }
+ 
+     return result;
+@@ -3170,7 +3200,7 @@
+ 
+ async function performPatchOperation(tabId, operation, context = {}) {
+   if (operation.type === 'update_region' || operation.type === 'set_labels') {
+-    return performRegionUpdate(tabId, operation);
++    return performRegionUpdate(tabId, operation, context);
+   }
+   if (operation.type === 'add_region') return performStructuralAdd(tabId, operation, context);
+   if (operation.type === 'delete_region') return performStructuralDelete(tabId, operation, context);
+@@ -3980,8 +4010,17 @@
+   await writeJournal(journal);
+   await refreshJournalExpectedFingerprint(journal);
+ 
++  let transactionTraceId = null;
++  let transactionTraceInstalled = false;
++  let transactionTabId = null;
+   try {
+     const { tab } = await getActiveAidpTab(preferredTabId);
++    transactionTabId = tab.id;
++    transactionTraceId = `save-transaction-${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
++    await installTempSaveTrace(tab.id, transactionTraceId);
++    transactionTraceInstalled = true;
++    journal.transaction_save_trace_id = transactionTraceId;
++    journal.save_ack_mode = 'final_full_state_http_200';
+     journal.status = 'applying';
+     journal.apply_started_at = new Date().toISOString();
+     await writeJournal(journal);
+@@ -3994,7 +4033,7 @@
+       await writeJournal(journal);
+       let operationResult = null;
+       try {
+-        operationResult = await performPatchOperation(tab.id, item, { journal });
++        operationResult = await performPatchOperation(tab.id, item, { journal, defer_save_ack: true });
+         item.adapter_result = operationResult;
+       } catch (operationError) {
+         item.status = 'failed';
+@@ -4005,13 +4044,13 @@
+         await writeJournal(journal);
+         throw operationError;
+       }
+-      // Beta28: per-operationは操作対象のsave ACK + HTTP 200だけを確認し、React Model/Waveの
+-      // 即時反映だけが30秒以上遅れるケースを確認した。operation直後の権威判定は
+-      // performPatchOperation内で確認済みのSubmitTempItemAnswer HTTP 200 + scoped payload ACKとする。
+-      // Model/Wave/Tableの三重一致は全operation完了後のreload persistenceで厳密確認する。
++      // Beta38: per-operationの30秒save待ちは行わない。各operationはbounded native/local
++      // mutationだけを完了し、patch全体の最後に1回、最終data/dataMap完全一致の
++      // SubmitTempItemAnswer HTTP 200を確認する。最終権威はreload後のサーバー由来状態。
+       item.verify = {
+         ok: true,
+-        mode: 'save_payload_only_until_reload',
++        mode: 'transaction_save_ack_deferred',
++        transaction_save_ack_deferred: true,
+         model_wave_table_deferred_until_reload: true,
+         expected_region_count: item.expected_regions_after?.length ?? null
+       };
+@@ -4025,11 +4064,26 @@
+     if (!journal.expected_result_fingerprint || journal.unresolved_structural_ids?.length) {
+       throw new Error('全操作後もnative structural IDが未解決です');
+     }
++
++    const finalExpectedRegions = finalExpectedRegionsFromJournal(journal);
++    if (!Array.isArray(finalExpectedRegions) || !finalExpectedRegions.length) {
++      throw new Error('最終期待region状態を構築できません');
++    }
++    await mutationProgress('AIDP一時保存の最終状態を確認しています…', 82);
++    journal.transaction_save_ack = await waitForTempSavePayload(tab.id, transactionTraceId, {
++      expected_regions: finalExpectedRegions,
++      expected_count: finalExpectedRegions.length
++    }, 30000);
++    journal.transaction_save_ack_at = new Date().toISOString();
++    await writeJournal(journal);
++    await removeTempSaveTrace(tab.id, transactionTraceId);
++    transactionTraceInstalled = false;
++
+     journal.status = 'applied_pending_persistence';
+     journal.apply_completed_at = new Date().toISOString();
+     journal.post_apply_snapshot_id = null;
+     journal.post_apply_fingerprint = null;
+-    journal.immediate_verification_mode = 'save_payload_only_until_reload';
++    journal.immediate_verification_mode = 'transaction_final_full_state_save_ack_until_reload';
+     journal.table_verification_deferred_until_reload = true;
+     journal.model_wave_verification_deferred_until_reload = true;
+     await writeJournal(journal);
+@@ -4054,6 +4108,10 @@
+     await saveLastReport('apply', report);
+     return report;
+   } catch (error) {
++    if (transactionTraceInstalled && transactionTabId !== null && transactionTraceId) {
++      try { await removeTempSaveTrace(transactionTabId, transactionTraceId); } catch (_) {}
++      transactionTraceInstalled = false;
++    }
+     journal.apply_error = error?.message || String(error);
+     if (error?.defer_recovery) {
+       journal.status = 'applied_pending_verification';
+--- /mnt/data/aidp_beta37_src/AIDP_ChatGPT_Bridge_v0.7.9_beta37_watchdog_fix/manifest.json	2026-08-17 01:59:37.000000000 +0000
++++ /mnt/data/aidp_beta38_src/AIDP_ChatGPT_Bridge_v0.7.9_beta38_transaction_settlement/manifest.json	2026-08-17 02:27:13.432504062 +0000
+@@ -1,8 +1,8 @@
+ {
+   "manifest_version": 3,
+-  "name": "AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 37",
+-  "version": "0.7.9.37",
+-  "description": "Beta37。Beta35でnative delete/exact-addの戻り値thenableをawaitして無期限停止する問題を修正。native handlerは一度だけ呼び、成功判定はbounded Model/Wave確認とSubmitTempItemAnswer ACKで行う。タブ別3ステップ・暫存/提出非自動は維持。",
++  "name": "AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 38",
++  "version": "0.7.9.38",
++  "description": "Beta38。適用時の保存確認をoperationごとの30秒待機から、patch全体で1回の最終SubmitTempItemAnswer HTTP 200＋data/dataMap完全一致ACKへ統合。AIDPの連続autosaveを待ち続ける問題を避け、reload後状態を最終Source of Truthとする。タブ別3ステップ・watchdog・自動補償・暫存/提出非自動は維持。",
+   "permissions": [
+     "scripting",
+     "tabs",
+--- /mnt/data/aidp_beta37_src/AIDP_ChatGPT_Bridge_v0.7.9_beta37_watchdog_fix/sidepanel.js	2026-08-17 01:59:19.000000000 +0000
++++ /mnt/data/aidp_beta38_src/AIDP_ChatGPT_Bridge_v0.7.9_beta38_transaction_settlement/sidepanel.js	2026-08-17 02:27:13.432352126 +0000
+@@ -1,6 +1,6 @@
+ 'use strict';
+ 
+-const VERSION = '0.7.9-beta.37';
++const VERSION = '0.7.9-beta.38';
+ const EXPORT_PORT_NAME = 'AIDP_EXPORT_JOB_V1';
+ const MUTATION_PORT_NAME = 'AIDP_MUTATION_JOB_V1';
+ const HEARTBEAT_MS = 15000;
+--- /mnt/data/aidp_beta37_src/AIDP_ChatGPT_Bridge_v0.7.9_beta37_watchdog_fix/content.js	2026-08-17 01:58:48.000000000 +0000
++++ /mnt/data/aidp_beta38_src/AIDP_ChatGPT_Bridge_v0.7.9_beta38_transaction_settlement/content.js	2026-08-17 02:27:13.431939622 +0000
+@@ -5,7 +5,7 @@
+   if (window.__AIDP_BRIDGE_V070_CONTENT__) return;
+   window.__AIDP_BRIDGE_V070_CONTENT__ = true;
+ 
+-  const VERSION = '0.7.9-beta.37';
++  const VERSION = '0.7.9-beta.38';
+   const PAGE_INSTANCE_ID = globalThis.crypto?.randomUUID?.() || `page-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+   const DOCUMENT_TIME_ORIGIN_MS = Number(globalThis.performance?.timeOrigin || Date.now());
+   const BADGE_ID = 'aidp-chatgpt-bridge-v070-badge';
+--- /mnt/data/aidp_beta37_src/AIDP_ChatGPT_Bridge_v0.7.9_beta37_watchdog_fix/inpage_ui.js	2026-08-17 01:59:19.000000000 +0000
++++ /mnt/data/aidp_beta38_src/AIDP_ChatGPT_Bridge_v0.7.9_beta38_transaction_settlement/inpage_ui.js	2026-08-17 02:27:13.432046271 +0000
+@@ -4,7 +4,7 @@
+   if (window.__AIDP_BRIDGE_INPAGE_UI_V1__) return;
+   window.__AIDP_BRIDGE_INPAGE_UI_V1__ = true;
+ 
+-  const VERSION = '0.7.9-beta.37';
++  const VERSION = '0.7.9-beta.38';
+   const HOST_ID = 'aidp-chatgpt-bridge-inpage-v1';
+   const EXPORT_PORT_NAME = 'AIDP_EXPORT_JOB_V1';
+   const MUTATION_PORT_NAME = 'AIDP_MUTATION_JOB_V1';
+--- /mnt/data/aidp_beta37_src/AIDP_ChatGPT_Bridge_v0.7.9_beta37_watchdog_fix/offscreen.js	2026-08-17 01:58:48.000000000 +0000
++++ /mnt/data/aidp_beta38_src/AIDP_ChatGPT_Bridge_v0.7.9_beta38_transaction_settlement/offscreen.js	2026-08-17 02:27:13.432215673 +0000
+@@ -1,7 +1,7 @@
+ (() => {
+   'use strict';
+ 
+-  const VERSION = '0.7.9-beta.37';
++  const VERSION = '0.7.9-beta.38';
+   const encoder = new TextEncoder();
+   const objectUrls = new Set();
+   const preparedMedia = new Map();
