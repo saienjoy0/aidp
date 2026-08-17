@@ -1,28 +1,26 @@
 # AIDP ↔ ChatGPT Bridge
 
-Current development line: **0.7.9-beta.43** (2026-08-17).
+Current development line: **0.7.9-contractlab.1** / manifest **0.7.9.44** (2026-08-17).
 
 Current tracked manifest / UI shell: `current/`.
 
-Latest audit record: `archive/beta43-checkpoint-executor/`.
+Latest implementation/audit record: `archive/contractlab1-save-contract/`.
 
-Beta43 is a structural executor redesign, not another timeout increase. Live Beta40–42 evidence showed AIDP is eventually consistent: native mutation calls can persist while immediate React/Neeko Model, WaveSurfer, intercepted save payload, or content-adapter observations remain stale. Beta43 therefore separates **mutation invocation** from **settlement**.
+The project has moved from editor-settlement automation to **Save Contract / annotation-document qualification**. Live Beta40–42 evidence showed that an edit can already be persisted even while immediate React/Neeko Model, WaveSurfer, intercepted save observation, or content-adapter state remains stale. Therefore those UI/runtime observations are no longer persistence authorities.
 
-Any patch containing add/delete/split runs as:
-1. start from a reload-derived known canonical state;
-2. invoke exactly one operation;
-3. allow normal AIDP save grace;
-4. reload the same case;
-5. capture a stable server-derived canonical checkpoint;
-6. continue only when that checkpoint matches the expected state.
+Contract Lab 1 qualifies whether AIDP's document-level `SubmitTempItemAnswer` contract can safely become the deterministic write driver:
 
-Native add/delete no longer hard-fail because same-renderer Model/Wave settlement is slow. Added formal IDs are resolved only after reload from the new region set. Mixed structural patches checkpoint every operation so later writes never run on stale renderer state.
+1. capture/reload current canonical state;
+2. map a complete desired annotation document while preserving opaque raw metadata;
+3. perform a final client-side CAS check;
+4. invoke one logical save at most once;
+5. reload;
+6. classify actual canonical Model/Table state as desired, before, partial, or unavailable.
 
-Normal target workflow remains:
-1. Export case ZIP
-2. Paste ChatGPT Annotation Patch JSON and safety-check
-3. Apply → checkpoint/reload verification
+Wave is diagnostic/readiness information only. Transport uncertainty never causes automatic retry or inverse rollback. Unknown/partial states STOP-FIRST. Cross-tab unresolved journals block another write even after an expiring lease is gone.
 
-Important current rule: after an unknown/partial write state, **reload + fresh case ZIP export comes before any new patch**. Beta43 has passed local static/regression tests but has not yet passed a live AIDP structural write.
+Qualification is staged Q0→Q8. Normal production ③ write is disabled until capabilities are qualified. Local static/regression suite is **45/45 PASS**; live AIDP Q0–Q8 has **not yet been run**.
+
+Important current rule: before first live Q0, reload the affected AIDP case and export a fresh read-only ZIP. The previous beta42 structural-delete attempt ended with an unknown outcome and must be classified separately from Save Contract probing.
 
 The Bridge never auto-clicks AIDP staging/submission.
