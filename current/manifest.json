@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 40",
-  "version": "0.7.9.40",
-  "description": "AIDP ↔ ChatGPT Bridge beta40: hard-deadline mutation runtime, tab isolation, 3-step Side Panel.",
+  "name": "AIDP ↔ ChatGPT Bridge v0.7.9 Integrated Beta 41",
+  "version": "0.7.9.41",
+  "description": "AIDP ↔ ChatGPT Bridge beta41: deferred local settlement, transaction save ACK, hard deadlines, tab isolation, 3-step Side Panel.",
   "permissions": ["scripting", "tabs", "storage", "downloads", "offscreen", "sidePanel"],
   "host_permissions": ["https://aidp.bytedance.com/*", "https://*.bytetos.com/*"],
   "background": {"service_worker": "service_worker.js"},
