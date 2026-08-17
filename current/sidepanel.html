@@ -10,7 +10,7 @@
   <header class="app-header">
     <div>
       <h1>AIDP ↔ ChatGPT Bridge</h1>
-      <div class="version">Beta 41｜Deferred Local Settlement・タブ別3ステップ</div>
+      <div class="version">Beta 42｜Reload-Authoritative・タブ別3ステップ</div>
     </div>
     <span id="tab-badge" class="badge warn">接続確認中</span>
   </header>
@@ -18,7 +18,7 @@
   <main>
     <section class="panel active step-card"><h2>① ChatGPTに渡す</h2><button id="export" class="primary">① 案件ZIPを書き出す</button><p class="note">検査も自動。保存されたZIPをこのチャットへ送ってください。</p></section>
     <section class="panel active step-card"><h2>② ChatGPTから返った修正JSON</h2><textarea id="patch" rows="10" spellcheck="false" placeholder="ここにChatGPTが返した修正JSONをそのまま貼り付け"></textarea><button id="dry" class="primary">② JSONを安全検査</button><pre id="dry-result" class="result hidden"></pre></section>
-    <section class="panel active step-card"><h2>③ PASSならこれだけ</h2><button id="apply" class="primary" disabled>③ 修正を反映 → 再読込 → 保持確認</button><p class="note">反映後は対象タブだけ再読込。45秒待機中は別のAIDPタブへ移動して構いません。③の同時実行だけは安全のため1件ずつです。</p></section>
+    <section class="panel active step-card"><h2>③ PASSならこれだけ</h2><button id="apply" class="primary" disabled>③ 修正を反映 → 再読込 → 保持確認</button><p class="note">反映後は対象タブだけ再読込。最初の45秒は検査せず待機し、遅い回線ではWave準備を追加待機します。進捗は状態欄に表示。③の同時実行だけは安全のため1件ずつです。</p></section>
     <section class="status-card"><div class="status-head"><strong>状態</strong><span id="spinner" class="spinner hidden"></span></div><div id="status-text">AIDP案件画面を開いてください。</div><progress id="progress" max="100" value="0"></progress></section>
     <details class="advanced"><summary>トラブル時だけ開く</summary><div class="advanced-body"><button id="inspect" class="secondary">現在状態だけ検査</button><button id="journal" class="secondary">Journal確認</button><pre id="journal-result" class="result">Journal未確認</pre><button id="persistence" class="secondary">保持確認だけ再実行</button><button id="rollback" class="danger">backupへ復元（2回押し）</button><button id="clear" class="ghost">貼り付けJSONをクリア</button><div class="button-grid"><button class="ghost report" data-kind="dry_run">dry-runレポート</button><button class="ghost report" data-kind="apply">適用レポート</button><button class="ghost report" data-kind="persistence">保持レポート</button><button class="ghost report" data-kind="recovery">復元レポート</button></div></div></details>
   </main>
