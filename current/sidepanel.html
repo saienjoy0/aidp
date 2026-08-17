@@ -10,18 +10,75 @@
   <header class="app-header">
     <div>
       <h1>AIDP ↔ ChatGPT Bridge</h1>
-      <div class="version">Beta 43｜Checkpoint Executor・タブ別3ステップ</div>
+      <div class="version">Contract Lab 1｜Save Contract Qualification</div>
     </div>
     <span id="tab-badge" class="badge warn">接続確認中</span>
   </header>
-  <div class="safety-banner">操作はこの右側パネルだけ。<strong>各AIDPタブごとにJSON・②結果・Journalを分離</strong>します。<br><strong>暫存・提出は自動操作しません。</strong></div>
+
+  <div class="safety-banner">
+    Contract Labです。<strong>通常③のproduction書き込みは無効</strong>です。<br>
+    <strong>暫存・提出は自動操作しません。</strong> Save Contract検証だけをAdvancedから実行します。
+  </div>
+
   <main>
-    <section class="panel active step-card"><h2>① ChatGPTに渡す</h2><button id="export" class="primary">① 案件ZIPを書き出す</button><p class="note">検査も自動。保存されたZIPをこのチャットへ送ってください。</p></section>
-    <section class="panel active step-card"><h2>② ChatGPTから返った修正JSON</h2><textarea id="patch" rows="10" spellcheck="false" placeholder="ここにChatGPTが返した修正JSONをそのまま貼り付け"></textarea><button id="dry" class="primary">② JSONを安全検査</button><pre id="dry-result" class="result hidden"></pre></section>
-    <section class="panel active step-card"><h2>③ PASSならこれだけ</h2><button id="apply" class="primary" disabled>③ 修正を反映 → 再読込 → 保持確認</button><p class="note">構造変更は1操作ごとにAIDPを再読込してサーバー由来状態を確認してから次へ進みます。③の同時実行だけは安全のため1件ずつです。</p></section>
-    <section class="status-card"><div class="status-head"><strong>状態</strong><span id="spinner" class="spinner hidden"></span></div><div id="status-text">AIDP案件画面を開いてください。</div><progress id="progress" max="100" value="0"></progress></section>
-    <details class="advanced"><summary>トラブル時だけ開く</summary><div class="advanced-body"><button id="inspect" class="secondary">現在状態だけ検査</button><button id="journal" class="secondary">Journal確認</button><pre id="journal-result" class="result">Journal未確認</pre><button id="persistence" class="secondary">保持確認だけ再実行</button><button id="rollback" class="danger">backupへ復元（2回押し）</button><button id="clear" class="ghost">貼り付けJSONをクリア</button><div class="button-grid"><button class="ghost report" data-kind="dry_run">dry-runレポート</button><button class="ghost report" data-kind="apply">適用レポート</button><button class="ghost report" data-kind="persistence">保持レポート</button><button class="ghost report" data-kind="recovery">復元レポート</button></div></div></details>
+    <section class="panel active step-card">
+      <h2>① ChatGPTに渡す</h2>
+      <button id="export" class="primary">① 案件ZIPを書き出す</button>
+      <p class="note">検査も自動。保存されたZIPをこのチャットへ送ってください。</p>
+    </section>
+
+    <section class="panel active step-card">
+      <h2>② ChatGPTから返った修正JSON</h2>
+      <textarea id="patch" rows="10" spellcheck="false" placeholder="ここにChatGPTが返した修正JSONをそのまま貼り付け"></textarea>
+      <button id="dry" class="primary">② JSONを安全検査</button>
+      <pre id="dry-result" class="result hidden"></pre>
+    </section>
+
+    <section class="panel active step-card">
+      <h2>③ PASSならこれだけ</h2>
+      <button id="apply" class="primary" disabled>③ Contract Labでは無効</button>
+      <p class="note">Qualification完了までは通常の書き込みを行いません。</p>
+    </section>
+
+    <section class="status-card">
+      <div class="status-head">
+        <strong>状態</strong>
+        <span id="spinner" class="spinner hidden"></span>
+      </div>
+      <div id="status-text">AIDP案件画面を開いてください。</div>
+      <progress id="progress" max="100" value="0"></progress>
+    </section>
+
+    <details class="advanced">
+      <summary>Contract Lab / トラブル時</summary>
+      <div class="advanced-body">
+        <button id="inspect" class="secondary">現在状態だけ検査</button>
+        <button id="journal" class="secondary">Journal確認</button>
+        <pre id="journal-result" class="result">Journal未確認</pre>
+        <button id="persistence" class="secondary" disabled>保持確認（Contract Labでは無効）</button>
+        <button id="rollback" class="danger" disabled>backup復元（Contract Labでは無効）</button>
+        <button id="clear" class="ghost">貼り付けJSONをクリア</button>
+        <hr>
+        <section class="contract-lab-card">
+          <strong>Save Contract Qualification</strong>
+          <p class="note">Q0→Q8を段階検証。現在QはJournalへ途中状態を保存し、worker/Side Panel中断後も同じsaveを再送せずverifyから再開します。異常時はSTOP-FIRSTです。</p>
+          <button id="contract-lab-run" class="secondary">現在のQを検証 / 続行</button>
+          <button id="contract-lab-status" class="ghost">Qualification状態更新</button>
+          <button id="contract-lab-report" class="ghost">Qualificationレポート保存</button>
+          <button id="contract-lab-reset" class="danger">Qualification状態をリセット（writeは戻しません）</button>
+          <pre id="contract-lab-result" class="result">未開始</pre>
+        </section>
+
+        <div class="button-grid">
+          <button class="ghost report" data-kind="dry_run">dry-runレポート</button>
+          <button class="ghost report" data-kind="apply">適用レポート</button>
+          <button class="ghost report" data-kind="persistence">保持レポート</button>
+          <button class="ghost report" data-kind="recovery">復元レポート</button>
+        </div>
+      </div>
+    </details>
   </main>
+
   <script src="sidepanel.js"></script>
 </body>
 </html>
