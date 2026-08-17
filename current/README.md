@@ -1,11 +1,11 @@
 # Current AIDP Bridge development line
 
-Current: **0.7.9-beta.40**.
+Current: **0.7.9-beta.41**.
 
-Beta 40 is the guarded-runtime audit build after the Beta 38/39 hang investigation. It is locally tested but has not yet passed a live Beta 40 AIDP write.
+Beta 41 fixes the live Beta 40 false-negative where `handleUpdateRegion` persisted `region_28` successfully, but local React/Neeko Model/Wave polling stayed stale and aborted the transaction before the next operation.
 
-Safety rule after an unknown/timeout write: explicit AIDP reload + fresh case ZIP export before any new patch. Reload-derived state is authoritative.
+Ordinary update local settlement is now diagnostic/deferred. Success still requires final full-state `SubmitTempItemAnswer` HTTP 200 ACK plus reload-derived persistence verification.
 
-Release/audit record: `archive/beta40-guarded-runtime/`.
+Release/audit record: `archive/beta41-deferred-local-settlement/`.
 
 The Bridge uses the Chrome Side Panel and never auto-clicks AIDP `暫存` or `提交`.
