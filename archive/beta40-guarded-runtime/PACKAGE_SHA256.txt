@@ -1,0 +1,4 @@
+AIDP_ChatGPT_Bridge_v0.7.9_beta40_guarded_runtime.zip
+SHA-256: f0907ca362bd9fcf2703d14d5d2f7219054a20d8112714411a2aec327f08cc0f
+Local release validation: unzip -t PASS; current tests PASS; active JavaScript syntax PASS.
+Live AIDP beta40 write: NOT YET RUN.
