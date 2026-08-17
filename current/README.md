@@ -1,11 +1,11 @@
 # Current AIDP Bridge development line
 
-Current: **0.7.9-beta.41**.
+Current: **0.7.9-beta.42**.
 
-Beta 41 fixes the live Beta 40 false-negative where `handleUpdateRegion` persisted `region_28` successfully, but local React/Neeko Model/Wave polling stayed stale and aborted the transaction before the next operation.
+Live Beta41 evidence proved that both `region_28` and `region_29` persisted correctly even though strict intercepted autosave matching failed and Wave readiness later timed out at `Table=20, Model=20, Wave=0`.
 
-Ordinary update local settlement is now diagnostic/deferred. Success still requires final full-state `SubmitTempItemAnswer` HTTP 200 ACK plus reload-derived persistence verification.
+Beta42 therefore treats intercepted `SubmitTempItemAnswer` matching as bounded transport evidence rather than final truth. Final success is determined from canonical AIDP state after reload. Persistence tolerates delayed Wave initialization within a bounded 4-minute Side Panel verification window.
 
-Release/audit record: `archive/beta41-deferred-local-settlement/`.
+Release/audit record: `archive/beta42-reload-authoritative/`.
 
 The Bridge uses the Chrome Side Panel and never auto-clicks AIDP `暫存` or `提交`.
