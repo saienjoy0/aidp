@@ -1,0 +1,7 @@
+Local browser-simulated artifact (not asserted identical to tracked main/current binary):
+AIDP_Bridge_Contract_Lab_v0.7.9-contractlab.1_verified.zip
+SHA256 0b5f4735c697dc88cee8edc7b7d776a451790e253d95132d23fbf4e727bbe0b1
+
+Browser simulation: PASS
+Node deterministic suite in this local artifact: 34/34 PASS
+Tracked main/current record remains manifest 0.7.9.44 with its separately recorded validation; this file does not replace that identity.

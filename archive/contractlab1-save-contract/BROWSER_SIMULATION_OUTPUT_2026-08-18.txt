@@ -1,0 +1,13 @@
+{
+  "table": {"ok": true, "count": 12, "pages": [{"page":1,"count":10},{"page":2,"count":2}]},
+  "raw": {"ok": true, "data": 12, "dataMap": 12},
+  "q0_dry": {"ok": true, "dry_run": true, "case_key": "blank", "region_id": "region_2", "original_text": "字幕2"},
+  "q0": {"ok": true, "adapter": "aidp-react-textarea-onchange-q0-contractlab", "case_key": "blank", "region_id": "region_2", "original_text": "字幕2", "requested_text": "字幕2〔SIM-Q0〕", "after": "字幕2〔SIM-Q0〕", "model": {"textarea_text":"字幕2〔SIM-Q0〕","data_text":"字幕2〔SIM-Q0〕","dataMap_text":"字幕2〔SIM-Q0〕","data_count":12,"dataMap_count":12}},
+  "obs": {"http": 200, "app": 0, "endpoint": "/api/dispatch/SubmitTempItemAnswer", "sensitive": []},
+  "server_q0": {"save_count": 1, "text": "字幕2〔SIM-Q0〕"},
+  "q0_reload": {"ok": true, "text": "字幕2〔SIM-Q0〕"},
+  "dispatch": {"ok": true, "http_status": 200, "application_status": 0, "duration_ms": 0.2, "response_text_length": 42},
+  "server_full": {"save_count": 3, "text": "FULLDOC-SIMULATION-OK"},
+  "full_reload": {"ok": true, "text": "FULLDOC-SIMULATION-OK"}
+}
+SIMULATION_PASS
