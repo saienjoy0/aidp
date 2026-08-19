@@ -1,10 +1,12 @@
 # AIDP ↔ ChatGPT Bridge
 
-Current development line: **0.7.9-contractlab.1** / manifest **0.7.9.44** (2026-08-17).
+> **Branch note — 2026-08-19:** this branch preserves **Beta 42 QC One-Click R2 (0.7.9.422)**. Before modifying this operational line, read [`docs/BRIDGE_INVARIANTS.md`](docs/BRIDGE_INVARIANTS.md). The R2 audit/manifest/test record is under [`archive/beta42-qc-oneclick-r2-20260819/`](archive/beta42-qc-oneclick-r2-20260819/). This branch intentionally does **not** replace the `current/` Contract Lab line.
 
-Current tracked manifest / UI shell: `current/`.
+Current development line on `main`: **0.7.9-contractlab.1** / manifest **0.7.9.44** (2026-08-17).
 
-Latest implementation/audit record: `archive/contractlab1-save-contract/`.
+Current tracked manifest / UI shell on `main`: `current/`.
+
+Latest implementation/audit record for that line: `archive/contractlab1-save-contract/`.
 
 The project has moved from editor-settlement automation to **Save Contract / annotation-document qualification**. Live Beta40–42 evidence showed that an edit can already be persisted even while immediate React/Neeko Model, WaveSurfer, intercepted save observation, or content-adapter state remains stale. Therefore those UI/runtime observations are no longer persistence authorities.
 
