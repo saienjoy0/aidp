@@ -1,0 +1,64 @@
+{
+  "schema": "aidp-chatgpt-patch/v3",
+  "case_key": "/management/task-v2/CASE_ID/mark-v3/1",
+  "source_snapshot_id": "sha256:PASTE_FROM_CASE_JSON",
+  "source_fingerprint": "sha256:PASTE_FROM_CASE_JSON",
+  "operations": [
+    {
+      "op_id": "split-001",
+      "type": "split_region",
+      "region_id": "region_42",
+      "expected": {
+        "start": 147.51,
+        "end": 159.28,
+        "text": "変更前の長い字幕",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "parts": [
+        {
+          "start": 147.51,
+          "end": 153.2,
+          "text": "前半字幕"
+        },
+        {
+          "start": 153.6,
+          "end": 159.28,
+          "text": "後半字幕"
+        }
+      ],
+      "reason": "内部無音と文節境界で2小条へ分割",
+      "requires_user_review": true
+    },
+    {
+      "op_id": "add-001",
+      "type": "add_region",
+      "region": {
+        "start": 61.2,
+        "end": 62.1,
+        "text": "字幕漏れ候補",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "reason": "音声があるが既存小条がないため追加",
+      "requires_user_review": true
+    },
+    {
+      "op_id": "delete-001",
+      "type": "delete_region",
+      "region_id": "region_DUPLICATE",
+      "expected": {
+        "start": 70.1,
+        "end": 71.0,
+        "text": "重複している字幕",
+        "speaker": "1",
+        "keep": "保留",
+        "voice_type": "说话"
+      },
+      "reason": "同一内容の重複小条を削除",
+      "requires_user_review": true
+    }
+  ]
+}

@@ -1,0 +1,143 @@
+v0.7.9-beta.17
+- Beta13/16で発生した部分構造失敗を、完全checkpoint一致なしでもjournal由来状態として安全分類できるrecovery engineを追加
+- split途中で作成された空字幕孤立regionを、ID・時刻・ラベル・対象外region不変を確認した場合だけ補償削除可能にした
+- operation例外時のadapter_result / errorをjournalへ即時保存し、再試行時に部分反映を再分類可能にした
+- recovery中のadd/removeは自動再補償せず、保存Payload証拠を残して次回rollbackでlive stateを再判定する
+- intermediate recoveryはround_id差だけを許容するが、完了判定は適用前backup fingerprint完全一致を必須化
+- AIDP自身の新規region ID生成経路が未確認のため、通常split/add/deleteをfeature flag OFFへ戻した（journal recoveryは利用可能）
+- content / service worker / offscreen / side panelを0.7.9-beta.17へ統一
+- recovery_engine unit testとBeta17 static testを追加
+
+v0.7.9-beta.16
+- split/add/deleteの専用チェックボックスと再検査ボタンを廃止。
+- dry-run時に構造operationを自動的に検証対象へ含め、差分確認後は適用ボタン1回で実行。
+- source fingerprint、expected一致、構造ルール、保存Payload、Model/Wave/Table照合、rollbackは維持。
+- stale applying journalの安全解除と提出非自動化も維持。
+
+v0.7.9-beta.15
+- stale `applying` journalを、現在fingerprintが適用前backupと完全一致する場合に限りメタデータだけ安全解除。
+- applying/rolling_back/apply_failed_compensatingでも復元ボタンを使用可能にした。
+- AIDPの暫存・提出は引き続き操作しない。
+
+v0.7.9-beta.13
+- split_region / add_region / delete_regionを個別承認付きで有効化
+- splitは2part限定。先頭partは元IDを保持し、2つ目はdry-run時に衝突しないregion IDを予約
+- addはstart/end/text/speaker/keep/voice_type必須、初期安全版ではkeep=保留のみ
+- deleteは完全expected一致と個別承認を必須化
+- handleAddRegion / handleRemoveRegionを使う構造adapterを追加
+- 構造操作後はSubmitTempItemAnswerのdata/dataMap全件、HTTP 200、件数、ID、round_idを照合
+- operation後はModel / Wave / Tableの全件状態をdry-run予定状態と2回連続照合
+- 構造rollbackを追加（add→remove、delete→同一ID再add、split→追加part remove＋元region restore）
+- 現在状態がbackupまたは既知のoperation完了状態と一致しない場合はユーザー編集保護のため自動rollbackを停止
+- 既存regionのspeaker / voice_type / keep単独変更と提出自動化は引き続き無効
+- 構造操作は未提出の検証案件で保持確認を行ってから本番利用する
+
+v0.7.9-beta.12
+- 字幕書き込みをDOM input/changeおよびhandleUpdateRegion二重同期から、textarea直下React onChangeへ一本化
+- start/endはNeeko handleUpdateRegionのみを使用
+- operationごとにSubmitTempItemAnswerを読み取り専用traceし、data/dataMapの対象値・件数・ID配列・HTTP 200を確認
+- item.regionsを編集結果判定から除外
+- save未確認時は成功扱いにせずjournal rollbackへ移行
+- 字幕＋時刻の適用順を実機成功順（React text→Neeko time）へ変更
+- Beta 12実機確認: 字幕、時刻、2region同時変更、dry-run拒否、rollback、再読み込み後全件一致がPASS
+- split/add/deleteおよびラベル系feature flagは引き続きOFF
+
+v0.7.9-beta.11
+- ページ巡回中・完了時の小条総数変化を検出して停止
+- 元メディア取得失敗時のcredential自動切替・自動再試行を廃止
+- executing中に例外となったoperationもrollback安全分類の対象へ追加
+- split/add実機調査用に、Neeko method metadata・region schema・WaveSurfer region API・store集計候補を読み取り専用で診断
+- split/add/deleteのfeature flagは実機PASSまでOFFを維持
+
+v0.7.9-beta.10
+- 適用時と保持確認時のpage_instance_idを比較し、手動再読み込みの実行を必須確認
+- content adapter版がservice worker版と一致しない場合は安全停止
+- fingerprintが2回連続安定しない場合、不安定snapshotを返さず必ず停止
+- 適用前backupへ戻った状態をfinalなnot_appliedとして終了し、次の適用を許可
+- manifest、Side Panel、content、offscreen、README、TEST_REPORTの版番号をBeta 10へ統一
+- 保持確認ボタンを「手動再読み込み後：45秒待って保持確認」へ変更
+
+v0.7.8-beta.9
+- 保持確認ボタンからの自動リロードを完全廃止
+- ボタン押下後45秒間はAIDP DOM・React・Wave・Tableを一切検査しない
+- 45秒後にタブ完了、三重構造、fingerprint安定を順番に確認
+- 低速回線で読み込み途中に検査が始まる問題を回避
+
+AIDP ↔ ChatGPT Bridge v0.7.7 Integrated Beta 8
+
+- 「保持確認」ボタンが自動再読み込み後すぐ検査を始める不具合を修正
+- タブのstatus=completeを3回連続で確認してから次へ進む
+- 読み込み完了後に30秒の固定待機を追加
+- Table／Model／Waveの件数一致を3回連続で確認
+- 全件snapshotのfingerprintを2回連続で確認してから永続化判定
+- 最大待機はページ完了120秒＋AIDP準備90秒＋snapshot安定90秒
+- ボタン名を「再読み込み→30秒待機→保持確認」へ変更
+- 手動で待つ必要はなく、進捗欄に残り秒数を表示
+
+---
+
+AIDP ↔ ChatGPT Bridge v0.7.7 Integrated Beta 8
+
+- 適用後のModel／Wave／Table反映を最大30秒待機
+- 反映遅延だけでは自動復元しない
+- applied_pending_verification状態を追加
+- 再読み込み確認で変更後／適用前／不明を判定
+- 復元後fingerprintの安定一致を最大20秒確認
+- 適用レポートへ各確認試行の実値・fingerprint・三重照合結果を記録
+- 既存の10秒超を悪化させない改善修正は警告付きで許可
+
+AIDP ↔ ChatGPT Bridge v0.7.7 Integrated Beta 8
+
+- 字幕変更をNeekoモデル（yuan_text）と表textareaの二重同期方式へ変更
+- 表だけ更新されModel/Table不一致になるBeta 5の実機不具合を修正
+- 適用後検査を最大3回再取得し、一時的なReact反映遅延を吸収
+- 字幕復元を同じ二重同期経路で実行
+- 同じ値が既に入っている場合は安全なno-opとして扱う
+- 提出・暫存の直接操作は引き続き行わない
+
+AIDP ↔ ChatGPT Bridge v0.7.7 Integrated Beta 8
+
+- 字幕書き込みをNeeko region APIから分離
+- text: 行内textareaの通常入力イベント経路
+- start/end: Neeko handleUpdateRegion
+- 対象ページ自動移動・元ページ復帰
+- expected字幕の直前照合
+- 複合operation失敗時の局所補償
+- 確認チェック・「適用」文字入力なし
+- 暂存・提出なし
+
+AIDP ↔ ChatGPT Bridge v0.7.7 Integrated Beta 8
+
+- 通常のstart/end/text適用からチェックボックスと「適用」入力を廃止
+- dry-run成功後に適用タブへ自動移動
+- 「N件をAIDPへ適用」の1クリック方式へ変更
+- journal状態を日本語で表示し、適用失敗時の原因も画面内に表示
+- rolled_back_after_failureを「自動復元済み」と明示
+
+---
+
+AIDP ↔ ChatGPT Bridge v0.7.7 Integrated Beta 8
+
+- dry-runで、変更前から存在する範囲外region等を全patchの致命エラーにしていた問題を修正
+- 既存の構造エラーは警告として表示し、今回の修正で新しく発生した構造エラーだけを拒否
+- update_region以外のfeature flag、三重照合、backup/journal/復元、提出なしは維持
+
+AIDP ↔ ChatGPT Bridge v0.7.7 Integrated Beta 8
+
+- v0.6.2のPort job方式を統合
+- 案件ZIP書き出し、三重照合、WAV、波形PNG、ruleset検査を維持
+- aidp-chatgpt-patch/v3の読み込みとdry-runを追加（v2互換読込あり）
+- case/snapshot/fingerprint/expected照合を追加
+- start/end/textのNeeko handleUpdateRegion適用を追加
+- 1operationごとの全件三重照合を追加
+- transaction journal、backup、自動補償復元、手動復元を追加
+- 再読込後の永続化確認を追加
+- dry-run/apply/persistence/recovery report保存を追加
+- speaker/voice_type/keep/split/add/deleteはfeature flagで初期無効
+- px/秒、合成イベント、CDP、Ctrl/Alt自動ドラッグ、region_42専用コードは不使用
+- 暂存・提出機能なし
+
+v0.7.7 Integrated Beta 8
+- 適用が成功する前に失敗した場合も、apply失敗レポートを必ず保存するよう修正。
+- journal作成前の失敗、適用途中の失敗、自動補償復元の結果を同じレポートから確認可能。
+- Side Panelの適用失敗表示に、適用レポート保存案内を追加。
